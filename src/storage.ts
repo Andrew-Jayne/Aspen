@@ -7,19 +7,3 @@ export interface StorageBackend {
   key(index: number): string | null;
   readonly length: number;
 }
-
-// ---- Storage Detection ------------------------------------------------------
-
-export function detectStorage(): StorageBackend | null {
-  try {
-    const storage = (globalThis as Record<string, unknown>).localStorage as
-      | StorageBackend
-      | undefined;
-    if (storage === undefined) return null;
-    storage.setItem("__aspen_test__", "1");
-    storage.removeItem("__aspen_test__");
-    return storage;
-  } catch {
-    return null;
-  }
-}

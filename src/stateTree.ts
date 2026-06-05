@@ -2,7 +2,6 @@
 
 import { deserializers, serializers } from "./seralize.ts";
 import type { StorageBackend } from "./storage.ts";
-import { detectStorage } from "./storage.ts";
 import type { AspenType, KeyDef, ResolvedKey, TypeMap } from "./types.ts";
 import { validators } from "./validation.ts";
 
@@ -10,13 +9,13 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
   private readonly namespace: string;
   private readonly keys: Map<string, ResolvedKey>;
   private readonly memory: Map<string, unknown>;
-  private readonly storage: StorageBackend | null;
+  private readonly storage: StorageBackend;
 
   constructor(namespace: string, schema: Schema) {
     this.namespace = namespace;
     this.keys = new Map();
     this.memory = new Map();
-    this.storage = detectStorage();
+    this.storage = localStorage;
 
     const seen = new Set<string>();
     for (const [name, def] of Object.entries(schema)) {
@@ -70,11 +69,9 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     const config = this.resolve(key);
 
     if (config.persistent === true) {
-      if (this.storage !== null) {
-        const raw = this.storage.getItem(config.storageKey);
-        if (raw !== null) {
-          return config.deserialize(raw) as TypeMap[Schema[Key]["type"]];
-        }
+      const raw = this.storage.getItem(config.storageKey);
+      if (raw !== null) {
+        return config.deserialize(raw) as TypeMap[Schema[Key]["type"]];
       }
       return config.default as TypeMap[Schema[Key]["type"]];
     }
@@ -107,9 +104,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     }
 
     if (config.persistent === true) {
-      if (this.storage !== null) {
-        this.storage.setItem(config.storageKey, config.serialize(value));
-      }
+      this.storage.setItem(config.storageKey, config.serialize(value));
     } else {
       this.memory.set(key, value);
     }
@@ -128,8 +123,6 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
   }
 
   validateStorage(): void {
-    if (this.storage === null) return;
-
     const validStorageKeys = new Set<string>();
     const aliasMap = new Map<string, string>();
 
@@ -188,8 +181,6 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
 
   exportPersistent(): Record<string, string> {
     const out: Record<string, string> = {};
-    if (this.storage === null) return out;
-
     for (const config of this.keys.values()) {
       if (config.persistent === true) {
         const raw = this.storage.getItem(config.storageKey);
