@@ -1,0 +1,38 @@
+{
+  "name": "aspen",
+  "version": "0.1.0",
+  "module": "src/index.ts",
+  "main": "dist/aspen.min.js",
+  "types": "dist/aspen.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "default": "./dist/aspen.min.js"
+    },
+    "./dist/aspen.ts": "./dist/aspen.ts",
+    "./dist/aspen.min.js": "./dist/aspen.min.js"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --minify --outfile dist/aspen.min.js && bun scripts/bundle-ts.ts",
+    "test": "bun test",
+    "lint": "biome check src/ && explicitjs src/",
+    "format": "biome check --write src/",
+    "check": "bun run lint && bun run test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "license": "AGPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Andrew-Jayne/Aspen"
+  }
+}
