@@ -18,7 +18,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --minify --outfile dist/aspen.min.js && bun scripts/bundle-ts.ts",
+    "build": "bun scripts/build.ts && bun scripts/bundle-ts.ts",
     "test": "bun test",
     "lint": "biome check src/ && explicitjs src/",
     "format": "biome check --write src/",
