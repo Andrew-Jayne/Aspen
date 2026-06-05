@@ -1,6 +1,7 @@
 _refs
 .DS_Store
 **/.DS_Store
+*.min.js
 
 # Logs
 logs

@@ -22,7 +22,8 @@
     "test": "bun test",
     "lint": "biome check src/ && explicitjs src/",
     "format": "biome check --write src/",
-    "check": "bun run lint && bun run test"
+    "check": "bun run lint && bun run test",
+    "example": "bun run build && cp dist/aspen.min.js example/ && bunx serve example/"
   },
   "devDependencies": {
     "@types/bun": "latest"
