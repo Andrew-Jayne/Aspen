@@ -1,4 +1,4 @@
-import { StateTree } from "./aspen.min.js";
+import { StateTree } from "https://github.com/Andrew-Jayne/Aspen/releases/latest/download/aspen.min.js";
 
 const Theme = { LIGHT: "light", DARK: "dark" };
 
