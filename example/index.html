@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aspen Notes</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header>
+    <h1>Aspen Notes</h1>
+    <nav>
+      <button type="button" id="theme-toggle" onclick="toggleTheme()">Dark</button>
+      <button type="button" id="settings-toggle" onclick="toggleSettings()">Settings</button>
+    </nav>
+  </header>
+
+  <div id="settings-pane">
+    <div class="setting-row">
+      <label for="font-slider">Font size</label>
+      <input type="range" id="font-slider" min="12" max="32" step="1" value="16" oninput="updateFontSize()">
+      <span id="font-display">16px</span>
+    </div>
+  </div>
+
+  <main>
+    <textarea id="editor" placeholder="Start writing..." oninput="updateEditorText()"></textarea>
+  </main>
+
+  <footer>
+    <span id="word-count">0 words</span>
+  </footer>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
