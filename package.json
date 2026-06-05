@@ -1,6 +1,6 @@
 {
   "name": "aspen",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "module": "src/index.ts",
   "main": "dist/aspen.min.js",
   "types": "dist/aspen.ts",
