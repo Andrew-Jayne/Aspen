@@ -20,10 +20,13 @@ jobs:
 
       - run: bun run build
 
+      - run: bun pm pack --destination dist
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/aspen.min.js
             dist/aspen.ts
+            dist/*.tgz
           generate_release_notes: true
