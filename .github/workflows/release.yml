@@ -23,5 +23,7 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/aspen.min.js
+          files: |
+            dist/aspen.min.js
+            dist/aspen.ts
           generate_release_notes: true
