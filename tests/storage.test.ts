@@ -54,6 +54,91 @@ describe("validateStorage", () => {
   });
 });
 
+describe("validateStorage self-healing", () => {
+  test("writes serialized defaults for missing persistent keys", () => {
+    const state = new StateTree("app.", {
+      theme: { type: "string", persistent: true, default: "light" },
+      size: { type: "number", persistent: true, default: 16 },
+    });
+    state.validateStorage();
+
+    expect(mockStorage.getItem("app.theme")).toBe("light");
+    expect(mockStorage.getItem("app.size")).toBe("16");
+  });
+
+  test("resets tampered values that fail deserialization", () => {
+    mockStorage.setItem("app.size", "banana");
+
+    const state = new StateTree("app.", {
+      size: { type: "number", persistent: true, default: 16 },
+    });
+    state.validateStorage();
+
+    expect(mockStorage.getItem("app.size")).toBe("16");
+    expect(state.get("size")).toBe(16);
+  });
+
+  test("resets values that parse but do not match the declared type", () => {
+    mockStorage.setItem("app.prefs", "5");
+
+    const state = new StateTree("app.", {
+      prefs: { type: "dict", persistent: true, default: { open: true } },
+    });
+    state.validateStorage();
+
+    expect(state.get("prefs")).toEqual({ open: true });
+  });
+
+  test("resets values outside the allowed list", () => {
+    mockStorage.setItem("app.theme", "hotdog-stand");
+
+    const state = new StateTree("app.", {
+      theme: {
+        type: "string",
+        persistent: true,
+        default: "light",
+        allowed: ["light", "dark"],
+      },
+    });
+    state.validateStorage();
+
+    expect(mockStorage.getItem("app.theme")).toBe("light");
+  });
+
+  test("leaves valid stored values untouched", () => {
+    mockStorage.setItem("app.theme", "dark");
+
+    const state = new StateTree("app.", {
+      theme: {
+        type: "string",
+        persistent: true,
+        default: "light",
+        allowed: ["light", "dark"],
+      },
+    });
+    state.validateStorage();
+
+    expect(mockStorage.getItem("app.theme")).toBe("dark");
+  });
+
+  test("heals invalid values arriving via alias migration", () => {
+    mockStorage.setItem("tw.size", "not-a-number");
+
+    const state = new StateTree("app.", {
+      size: {
+        type: "number",
+        persistent: true,
+        default: 16,
+        aliases: ["tw.size"],
+      },
+    });
+    state.validateStorage();
+
+    expect(mockStorage.getItem("app.size")).toBe("16");
+    expect(mockStorage.getItem("tw.size")).toBeNull();
+  });
+});
+
 describe("exportPersistent / importPersistent", () => {
   test("exports all persistent keys as storage-key → string", () => {
     const state = new StateTree("app.", {
