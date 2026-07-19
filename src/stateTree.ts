@@ -170,11 +170,44 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     }
 
     for (const [name, config] of this.keys) {
+      if (config.persistent === false) continue;
+
+      const raw = this.storage.getItem(config.storageKey);
+      if (raw === null) {
+        this.storage.setItem(
+          config.storageKey,
+          config.serialize(config.default),
+        );
+        console.info(`[Aspen] Restored default for missing key: ${name}`);
+        continue;
+      }
+
+      let value: unknown;
+      let intact = true;
+      try {
+        value = config.deserialize(raw);
+      } catch {
+        intact = false;
+      }
+      if (intact === true && config.validate(value) === false) {
+        intact = false;
+      }
       if (
-        config.persistent === true &&
-        this.storage.getItem(config.storageKey) === null
+        intact === true &&
+        config.allowed !== undefined &&
+        config.allowed.includes(value) === false
       ) {
-        console.info(`[Aspen] Using default for: ${name}`);
+        intact = false;
+      }
+
+      if (intact === false) {
+        console.warn(
+          `[Aspen] Invalid stored value for "${name}"; resetting to default`,
+        );
+        this.storage.setItem(
+          config.storageKey,
+          config.serialize(config.default),
+        );
       }
     }
   }
