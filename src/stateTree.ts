@@ -10,23 +10,30 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
   private readonly keys: Map<string, ResolvedKey>;
   private readonly memory: Map<string, unknown>;
   private readonly storage: StorageBackend;
+  private readonly persistenceUrl: string | null;
 
-  constructor(namespace: string, schema: Schema, storage?: StorageBackend) {
+  constructor(
+    namespace: string,
+    schema: Schema,
+    storage: StorageBackend = localStorage,
+    persistenceUrl: string | null = null,
+  ) {
     this.namespace = namespace;
     this.keys = new Map();
     this.memory = new Map();
-    this.storage = storage ?? localStorage;
+    this.storage = storage;
+    this.persistenceUrl = persistenceUrl;
 
-    const seen = new Set<string>();
+    const checkedKeys = new Set<string>();
     for (const [name, def] of Object.entries(schema)) {
-      if (seen.has(name) === true) {
+      if (checkedKeys.has(name) === true) {
         throw new Error(`[Aspen] Duplicate key: "${name}"`);
       }
-      seen.add(name);
+      checkedKeys.add(name);
 
       const type = def.type as AspenType;
 
-      if (validators[type] === undefined) {
+      if (Object.hasOwn(validators, type) === false) {
         throw new Error(
           `[Aspen] Unknown type "${type}" for key "${name}". ` +
             `Valid types: ${Object.keys(validators).join(", ")}`,
@@ -39,13 +46,34 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
         );
       }
 
-      if (
-        def.allowed !== undefined &&
-        def.allowed.includes(def.default) === false
-      ) {
+      let allowed: unknown[] | null = null;
+      if (Object.hasOwn(def, "allowed") === true) {
+        allowed = def.allowed as unknown[];
+      }
+      if (allowed !== null && allowed.includes(def.default) === false) {
         throw new Error(
           `[Aspen] Default value for "${name}" is not in the allowed list`,
         );
+      }
+
+      let aliases: string[] | null = null;
+      if (Object.hasOwn(def, "aliases") === true) {
+        aliases = def.aliases as string[];
+      }
+
+      let onUpdate: (() => void)[] = [];
+      if (Object.hasOwn(def, "onUpdate") === true) {
+        onUpdate = def.onUpdate as (() => void)[];
+      }
+
+      let serialize = serializers[type];
+      if (Object.hasOwn(def, "serialize") === true) {
+        serialize = def.serialize as (value: unknown) => string;
+      }
+
+      let deserialize = deserializers[type];
+      if (Object.hasOwn(def, "deserialize") === true) {
+        deserialize = def.deserialize as (raw: string) => unknown;
       }
 
       this.keys.set(name, {
@@ -53,11 +81,11 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
         type,
         persistent: def.persistent,
         default: def.default,
-        allowed: def.allowed,
-        aliases: def.aliases,
-        onUpdate: def.onUpdate ?? [],
-        serialize: def.serialize ?? serializers[type],
-        deserialize: def.deserialize ?? deserializers[type],
+        allowed,
+        aliases,
+        onUpdate,
+        serialize,
+        deserialize,
         validate: validators[type],
       });
     }
@@ -94,7 +122,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
       );
     }
 
-    if (config.allowed !== undefined) {
+    if (config.allowed !== null) {
       if (config.allowed.includes(value) === false) {
         throw new Error(
           `[Aspen] Value ${JSON.stringify(value)} is not allowed for "${key}". ` +
@@ -130,7 +158,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
       if (config.persistent === true) {
         validStorageKeys.add(config.storageKey);
 
-        if (config.aliases !== undefined) {
+        if (config.aliases !== null) {
           for (const alias of config.aliases) {
             aliasMap.set(alias, name);
           }
@@ -141,8 +169,8 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     for (const [oldKey, currentName] of aliasMap) {
       const oldValue = this.storage.getItem(oldKey);
       if (oldValue !== null) {
-        const config = this.keys.get(currentName);
-        if (config === undefined) continue;
+        const config = this.lookupKey(currentName);
+        if (config === null) continue;
         if (this.storage.getItem(config.storageKey) === null) {
           this.storage.setItem(config.storageKey, oldValue);
           console.info(`[Aspen] Migrated "${oldKey}" → "${config.storageKey}"`);
@@ -194,7 +222,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
       }
       if (
         intact === true &&
-        config.allowed !== undefined &&
+        config.allowed !== null &&
         config.allowed.includes(value) === false
       ) {
         intact = false;
@@ -230,8 +258,9 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
       if (storageKey.startsWith(this.namespace) === false) continue;
 
       const name = storageKey.slice(this.namespace.length);
-      const config = this.keys.get(name);
-      if (config === undefined || config.persistent === false) continue;
+      const config = this.lookupKey(name);
+      if (config === null) continue;
+      if (config.persistent === false) continue;
 
       this.set(
         name as string & keyof Schema,
@@ -240,9 +269,79 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     }
   }
 
+  /**
+   * PUTs `exportPersistent()` as JSON to the persistence URL. Pass a URL to
+   * override the one from the constructor options.
+   */
+  async pushPersistent(urlOverride: string | null = null): Promise<void> {
+    const targetUrl = this.resolvePersistenceUrl(urlOverride);
+    const response = await fetch(targetUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(this.exportPersistent()),
+    });
+    if (response.ok === false) {
+      throw new Error(
+        `[Aspen] Push to "${targetUrl}" failed: HTTP ${response.status}`,
+      );
+    }
+  }
+
+  /**
+   * GETs JSON state from the persistence URL and feeds it through
+   * `importPersistent()`. Returns false when the server has no saved state
+   * (HTTP 404); returns true when state was imported.
+   */
+  async pullPersistent(urlOverride: string | null = null): Promise<boolean> {
+    const targetUrl = this.resolvePersistenceUrl(urlOverride);
+    const response = await fetch(targetUrl, {
+      headers: { Accept: "application/json" },
+    });
+    if (response.status === 404) {
+      return false;
+    }
+    if (response.ok === false) {
+      throw new Error(
+        `[Aspen] Pull from "${targetUrl}" failed: HTTP ${response.status}`,
+      );
+    }
+
+    const data = (await response.json()) as Record<string, string>;
+    const malformedError = new Error(
+      `[Aspen] Pull from "${targetUrl}" returned malformed state`,
+    );
+    if (typeof data !== "object") throw malformedError;
+    if (data === null) throw malformedError;
+    if (Array.isArray(data) === true) throw malformedError;
+
+    this.importPersistent(data);
+    return true;
+  }
+
+  private resolvePersistenceUrl(urlOverride: string | null): string {
+    let targetUrl: string | null = this.persistenceUrl;
+    if (urlOverride !== null) {
+      targetUrl = urlOverride;
+    }
+    if (targetUrl === null) {
+      throw new Error(
+        "[Aspen] No persistence URL configured. Pass one in the constructor " +
+          "options or as an argument.",
+      );
+    }
+    return targetUrl;
+  }
+
+  private lookupKey(name: string): ResolvedKey | null {
+    if (this.keys.has(name) === true) {
+      return this.keys.get(name) as ResolvedKey;
+    }
+    return null;
+  }
+
   private resolve(key: string): ResolvedKey {
-    const config = this.keys.get(key);
-    if (config === undefined) {
+    const config = this.lookupKey(key);
+    if (config === null) {
       throw new Error(`[Aspen] Key not registered: "${key}"`);
     }
     return config;

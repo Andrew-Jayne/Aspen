@@ -29,8 +29,8 @@ export interface ResolvedKey {
   type: AspenType;
   persistent: boolean;
   default: unknown;
-  allowed: unknown[] | undefined;
-  aliases: string[] | undefined;
+  allowed: unknown[] | null;
+  aliases: string[] | null;
   onUpdate: (() => void)[];
   serialize: (value: unknown) => string;
   deserialize: (raw: string) => unknown;
