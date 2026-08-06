@@ -67,9 +67,9 @@ State.bootstrap();
 
 ## API
 
-### `new StateTree(namespace, schema)`
+### `new StateTree(namespace, schema, storage?)`
 
-Creates a state tree. The namespace prefixes all localStorage keys (e.g. `"app."` produces `"app.theme"`). The schema is a plain object where each key defines:
+Creates a state tree. The namespace prefixes all storage keys (e.g. `"app."` produces `"app.theme"`). The optional third argument is a `StorageBackend`; it defaults to localStorage. The schema is a plain object where each key defines:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -115,6 +115,33 @@ Six concrete types with built-in serialize/deserialize/validate:
 
 Custom `serialize` and `deserialize` functions can be provided per-key to override the defaults.
 
+## Storage backends
+
+By default, persistent keys live in localStorage. Any object implementing the `StorageBackend` interface (`getItem`, `setItem`, `removeItem`, `key`, `length` — the same shape as localStorage) can be passed as the third constructor argument.
+
+### IndexedDB
+
+`IndexedDBBackend` stores state in IndexedDB, which has a far larger quota than localStorage and does not block the main thread on writes. IndexedDB is async-only, so the backend keeps a full in-memory mirror: `open()` loads everything once, reads are served synchronously from the mirror, and writes are persisted in the background.
+
+```js
+import { IndexedDBBackend, StateTree } from "aspen";
+
+const backend = await IndexedDBBackend.open("my-app");
+
+const State = new StateTree("app.", {
+  theme: { type: "string", persistent: true, default: "light" },
+}, backend);
+
+State.validateStorage();
+State.bootstrap();
+```
+
+- `IndexedDBBackend.open(databaseName)` — async factory; resolves once existing state is loaded.
+- `backend.flush()` — resolves once every write issued so far has been persisted.
+- `backend.close()` — waits for pending writes, then closes the database.
+
+Writes are eventually consistent: `set()` returns immediately and the IndexedDB write completes in the background. Call `flush()` if you need a durability guarantee (e.g. in a `beforeunload`/`pagehide` handler).
+
 ## Enum support
 
 Use a frozen object + `Object.values()`:
@@ -137,7 +164,7 @@ const State = new StateTree("app.", {
 
 ```sh
 bun run build     # bundle to dist/aspen.min.js
-bun run test      # 37 tests across 6 files
+bun run test      # 51 tests across 7 files
 bun run lint      # biome + explicitjs
 bun run check     # lint then test
 ```

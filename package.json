@@ -26,7 +26,8 @@
     "example": "bun run build && cp dist/aspen.min.js example/ && bunx serve example/"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "fake-indexeddb": "^6.2.5"
   },
   "peerDependencies": {
     "typescript": "^5"

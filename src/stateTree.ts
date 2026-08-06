@@ -11,11 +11,11 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
   private readonly memory: Map<string, unknown>;
   private readonly storage: StorageBackend;
 
-  constructor(namespace: string, schema: Schema) {
+  constructor(namespace: string, schema: Schema, storage?: StorageBackend) {
     this.namespace = namespace;
     this.keys = new Map();
     this.memory = new Map();
-    this.storage = localStorage;
+    this.storage = storage ?? localStorage;
 
     const seen = new Set<string>();
     for (const [name, def] of Object.entries(schema)) {
