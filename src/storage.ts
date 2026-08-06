@@ -71,7 +71,10 @@ export class IndexedDBBackend implements StorageBackend {
   }
 
   getItem(key: string): string | null {
-    return this.cache.get(key) ?? null;
+    if (this.cache.has(key) === true) {
+      return this.cache.get(key) as string;
+    }
+    return null;
   }
 
   setItem(key: string, value: string): void {
@@ -89,7 +92,11 @@ export class IndexedDBBackend implements StorageBackend {
   }
 
   key(index: number): string | null {
-    return [...this.cache.keys()][index] ?? null;
+    const cacheKeys = [...this.cache.keys()];
+    if (index >= 0 && index < cacheKeys.length) {
+      return cacheKeys[index] as string;
+    }
+    return null;
   }
 
   get length(): number {
@@ -107,8 +114,8 @@ export class IndexedDBBackend implements StorageBackend {
     this.database.close();
   }
 
-  private queueWrite(
-    operation: (store: IDBObjectStore) => IDBRequest<unknown>,
+  private queueWrite<WriteResult>(
+    operation: (store: IDBObjectStore) => IDBRequest<WriteResult>,
   ): void {
     this.pendingWrites = this.pendingWrites.then(async () => {
       try {

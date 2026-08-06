@@ -67,9 +67,18 @@ State.bootstrap();
 
 ## API
 
-### `new StateTree(namespace, schema, storage?)`
+### `new StateTree(namespace, schema, storage?, persistenceUrl?)`
 
-Creates a state tree. The namespace prefixes all storage keys (e.g. `"app."` produces `"app.theme"`). The optional third argument is a `StorageBackend`; it defaults to localStorage. The schema is a plain object where each key defines:
+Creates a state tree. The namespace prefixes all storage keys (e.g. `"app."` produces `"app.theme"`).
+
+| Argument | Type | Default | Description |
+|---|---|---|---|
+| `namespace` | `string` | required | Prefix for all storage keys |
+| `schema` | object | required | Key definitions (see below) |
+| `storage` | `StorageBackend` | `localStorage` | Backend for persistent keys |
+| `persistenceUrl` | `string \| null` | `null` | Relative or absolute URL for remote push/pull |
+
+The schema is a plain object where each key defines:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -99,6 +108,10 @@ Cleans up localStorage: migrates aliased keys, removes orphaned keys in the name
 ### `State.exportPersistent()` / `State.importPersistent(data)`
 
 Snapshot and restore all persistent keys as a `Record<string, string>`. Useful for backup/sync.
+
+### `State.pushPersistent(url?)` / `State.pullPersistent(url?)`
+
+Async remote persistence over HTTP — see [Remote persistence](#remote-persistence). Both use the constructor's `persistenceUrl` argument unless a URL is passed directly.
 
 ## Types
 
@@ -142,6 +155,38 @@ State.bootstrap();
 
 Writes are eventually consistent: `set()` returns immediately and the IndexedDB write completes in the background. Call `flush()` if you need a durability guarantee (e.g. in a `beforeunload`/`pagehide` handler).
 
+## Remote persistence
+
+Pass a `persistenceUrl` (relative or absolute) as the fourth constructor argument and Aspen can push its persistent state to a server and pull it back — so a user's app state follows them across devices.
+
+```js
+const State = new StateTree("app.", {
+  theme: { type: "string", persistent: true, default: "light" },
+}, localStorage, `/state/${userId}`);
+
+// on load: prefer remote state if the server has any
+State.validateStorage();
+const hadRemoteState = await State.pullPersistent();
+State.bootstrap();
+
+// on change (or on an interval / before unload): save to the server
+await State.pushPersistent();
+```
+
+The protocol is two endpoints on the same URL:
+
+- **`PUT <persistenceUrl>`** — `pushPersistent()` sends `exportPersistent()` as a JSON object of `{storageKey: serializedValue}`. Any 2xx response is success.
+- **`GET <persistenceUrl>`** — `pullPersistent()` expects that same JSON object back and feeds it through `importPersistent()` (firing `onUpdate` callbacks). A 404 means "no saved state yet": `pullPersistent()` resolves `false` and leaves local state untouched. Any other non-2xx status throws.
+
+Both methods accept a URL argument that overrides the configured one. Identify the user in the URL (e.g. `/state/123`) or via cookies/headers on your server — and authenticate requests in production; the reference implementation trusts the URL for brevity.
+
+A ready-to-copy FastAPI reference server lives in [`example/persistence-server/main.py`](example/persistence-server/main.py):
+
+```sh
+pip install fastapi uvicorn
+uvicorn main:app --reload
+```
+
 ## Enum support
 
 Use a frozen object + `Object.values()`:
@@ -160,11 +205,17 @@ const State = new StateTree("app.", {
 });
 ```
 
+## Built with Aspen
+
+- [Typewriter](https://github.com/Andrew-Jayne/Typewriter) — a simple, focused, and flexible tool for writing and reading with built-in markdown rendering
+
+Using Aspen in a public project? Open a PR to add it here.
+
 ## Development
 
 ```sh
 bun run build     # bundle to dist/aspen.min.js
-bun run test      # 51 tests across 7 files
+bun run test      # 60 tests across 8 files
 bun run lint      # biome + explicitjs
 bun run check     # lint then test
 ```
