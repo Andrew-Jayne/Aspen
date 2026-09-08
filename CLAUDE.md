@@ -1,6 +1,6 @@
 ## Tooling
 
-Bun-only project. No Node, no npm, no yarn.
+Bun-only project. No Node, no npm, no yarn. Both linters (Biome and ExplicitJS) are dev dependencies, so `bun install` is the entire toolchain setup; no global installs.
 
 - `bun run build` — bundle `src/index.ts` to `dist/aspen.min.js`
 - `bun run test` — run test suite (67 tests across 8 files in `tests/`)
@@ -14,8 +14,8 @@ Test helpers are preloaded via `bunfig.toml`, not imported per-file.
 
 Must pass both linters before merge:
 
-- **Biome** — formatting + lint rules (config in `biome.json`)
-- **ExplicitJS** — no single-letter vars, no ternaries, no anonymous functions at all, no single-use functions, no optional params. Both opt-in extras (`arrow` and `optional_param`) are enabled via `.explicitrc.json`, which is the strictest configuration the tool offers. Run `explicitjs src/` to check. Installed as a Deno shim pinned to the `v1beta2` tag of github.com/Andrew-Jayne/ExplicitJS.
+- **Biome** — formatting + lint rules (config in `biome.json`), pinned as a dev dependency
+- **ExplicitJS** — no single-letter vars, no ternaries, no anonymous functions at all, no single-use functions, no optional params. Both opt-in extras (`arrow` and `optional_param`) are enabled via `.explicitrc.json`, which is the strictest configuration the tool offers. Run `bun run lint` (or `bunx explicitjs src/`) to check. Installed as a Bun dev dependency from the `v1beta3` release tarball of github.com/Andrew-Jayne/ExplicitJS (pinned by URL in package.json; no Deno or global install needed).
 
 No arrow functions or `function` expressions anywhere in src/ (the `arrow` extra flags every one). Lookup tables use object method shorthand (`string(value: unknown): string { ... }`), callbacks that need closure state are bound class methods (`this.method.bind(this)`), and stateless handlers are module-level named functions. A module-level function referenced only from inside another function or method is not flagged as single-use; one defined and called in the same scope is.
 No ternaries — use if/else.
