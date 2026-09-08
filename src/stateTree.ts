@@ -2,12 +2,25 @@
 
 import { deserializers, serializers } from "./seralize.ts";
 import type { StorageBackend } from "./storage.ts";
-import type { AspenType, KeyDef, ResolvedKey, TypeMap } from "./types.ts";
+import type {
+  AspenType,
+  KeyDef,
+  KeyNames,
+  ResolvedKey,
+  TypeMap,
+} from "./types.ts";
 import { validators } from "./validation.ts";
 
 export class StateTree<const Schema extends Record<string, KeyDef>> {
+  /**
+   * Every schema key name, mapped to itself and frozen. Use it in place of
+   * string literals: `State.get(State.keys.theme)`. A typo is a compile error
+   * in TypeScript and an `undefined` key (which `get`/`set` reject) in JS.
+   */
+  readonly keys: KeyNames<Schema>;
+
   private readonly namespace: string;
-  private readonly keys: Map<string, ResolvedKey>;
+  private readonly registry: Map<string, ResolvedKey>;
   private readonly memory: Map<string, unknown>;
   private readonly storage: StorageBackend;
   private readonly persistenceUrl: string | null;
@@ -19,17 +32,19 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     persistenceUrl: string | null = null,
   ) {
     this.namespace = namespace;
-    this.keys = new Map();
+    this.registry = new Map();
     this.memory = new Map();
     this.storage = storage;
     this.persistenceUrl = persistenceUrl;
 
     const checkedKeys = new Set<string>();
+    const keyNames: Record<string, string> = {};
     for (const [name, def] of Object.entries(schema)) {
       if (checkedKeys.has(name) === true) {
         throw new Error(`[Aspen] Duplicate key: "${name}"`);
       }
       checkedKeys.add(name);
+      keyNames[name] = name;
 
       const type = def.type as AspenType;
 
@@ -111,7 +126,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
         deserialize = def.deserialize as (raw: string) => unknown;
       }
 
-      this.keys.set(name, {
+      this.registry.set(name, {
         storageKey: namespace + name,
         type,
         persistent: def.persistent,
@@ -124,6 +139,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
         validate: validators[type],
       });
     }
+    this.keys = Object.freeze(keyNames) as KeyNames<Schema>;
   }
 
   get<Key extends string & keyof Schema>(
@@ -178,7 +194,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
   }
 
   bootstrap(): void {
-    for (const config of this.keys.values()) {
+    for (const config of this.registry.values()) {
       for (const fn of config.onUpdate) {
         fn();
       }
@@ -189,7 +205,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     const validStorageKeys = new Set<string>();
     const aliasMap = new Map<string, string>();
 
-    for (const [name, config] of this.keys) {
+    for (const [name, config] of this.registry) {
       if (config.persistent === true) {
         validStorageKeys.add(config.storageKey);
 
@@ -232,7 +248,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
       this.storage.removeItem(key);
     }
 
-    for (const [name, config] of this.keys) {
+    for (const [name, config] of this.registry) {
       if (config.persistent === false) continue;
 
       const raw = this.storage.getItem(config.storageKey);
@@ -277,7 +293,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
 
   exportPersistent(): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const config of this.keys.values()) {
+    for (const config of this.registry.values()) {
       if (config.persistent === true) {
         const raw = this.storage.getItem(config.storageKey);
         if (raw !== null) {
@@ -368,8 +384,8 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
   }
 
   private lookupKey(name: string): ResolvedKey | null {
-    if (this.keys.has(name) === true) {
-      return this.keys.get(name) as ResolvedKey;
+    if (this.registry.has(name) === true) {
+      return this.registry.get(name) as ResolvedKey;
     }
     return null;
   }
