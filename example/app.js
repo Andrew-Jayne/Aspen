@@ -31,29 +31,29 @@ const State = new StateTree("app.", {
 });
 
 function renderTheme() {
-  const theme = State.get("theme");
+  const theme = State.get(State.keys.theme);
   document.documentElement.setAttribute("data-theme", theme);
   document.getElementById("theme-toggle").textContent = theme;
 }
 
 function renderEditor() {
-  document.getElementById("editor").value = State.get("editorText");
+  document.getElementById("editor").value = State.get(State.keys.editorText);
 }
 
 function renderWordCount() {
   document.getElementById("word-count").textContent =
-    `${State.get("editorText").trim().split(/\s+/).filter(Boolean).length} words`;
+    `${State.get(State.keys.editorText).trim().split(/\s+/).filter(Boolean).length} words`;
 }
 
 function renderFontSize() {
-  const size = State.get("fontSize");
+  const size = State.get(State.keys.fontSize);
   document.documentElement.style.setProperty("--font-size", `${size}px`);
   document.getElementById("font-display").textContent = `${size}px`;
   document.getElementById("font-slider").value = String(size);
 }
 
 function renderSettings() {
-  const open = State.get("settingsOpen");
+  const open = State.get(State.keys.settingsOpen);
   if (open === true) {
     document.getElementById("settings-pane").style.display = "block";
   } else {
@@ -63,24 +63,24 @@ function renderSettings() {
 }
 
 function toggleTheme() {
-  if (State.get("theme") === Theme.LIGHT) {
-    State.set("theme", Theme.DARK);
+  if (State.get(State.keys.theme) === Theme.LIGHT) {
+    State.set(State.keys.theme, Theme.DARK);
   } else {
-    State.set("theme", Theme.LIGHT);
+    State.set(State.keys.theme, Theme.LIGHT);
   }
 }
 
 function toggleSettings() {
-  State.set("settingsOpen", State.get("settingsOpen") === false);
+  State.set(State.keys.settingsOpen, State.get(State.keys.settingsOpen) === false);
 }
 
 function updateEditorText() {
-  State.set("editorText", document.getElementById("editor").value);
+  State.set(State.keys.editorText, document.getElementById("editor").value);
 }
 
 function updateFontSize() {
   State.set(
-    "fontSize",
+    State.keys.fontSize,
     parseInt(document.getElementById("font-slider").value, 10),
   );
 }

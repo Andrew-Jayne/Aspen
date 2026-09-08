@@ -41,24 +41,24 @@
     //    pull, the same function is correct on bootstrap, on set(), and after
     //    a pullPersistent() from a server.
     function renderGreeting() {
-      let greeting = `Hello, ${State.get("name")}!`;
-      if (State.get("clicks") >= 10) {
-        greeting = `Hello, ${State.get("name")}! You are persistent.`;
+      let greeting = `Hello, ${State.get(State.keys.name)}!`;
+      if (State.get(State.keys.clicks) >= 10) {
+        greeting = `Hello, ${State.get(State.keys.name)}! You are persistent.`;
       }
       document.getElementById("greeting").textContent = greeting;
     }
 
     function renderCount() {
-      document.getElementById("count").textContent = String(State.get("clicks"));
+      document.getElementById("count").textContent = String(State.get(State.keys.clicks));
     }
 
     // 3. Event handlers only ever call set(). They never touch the DOM;
     //    the schema decides which render functions run.
     document.getElementById("increment").addEventListener("click", function increment() {
-      State.set("clicks", State.get("clicks") + 1);
+      State.set(State.keys.clicks, State.get(State.keys.clicks) + 1);
     });
     document.getElementById("reset").addEventListener("click", function reset() {
-      State.set("clicks", 0);
+      State.set(State.keys.clicks, 0);
     });
 
     // 4. Heal storage, then paint the initial UI from stored or default state.
