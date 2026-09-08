@@ -30,7 +30,7 @@
     "fake-indexeddb": "^6.2.5"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^6"
   },
   "license": "AGPL-3.0",
   "repository": {

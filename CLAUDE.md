@@ -15,9 +15,9 @@ Test helpers are preloaded via `bunfig.toml`, not imported per-file.
 Must pass both linters before merge:
 
 - **Biome** — formatting + lint rules (config in `biome.json`)
-- **ExplicitJS** — no single-letter vars, no ternaries, no implicit-boolean arrows, no single-use functions, no optional params (`arg?:` — strict `optional_param` check opted into via `.explicitrc.json`). Run `explicitjs src/` to check. Installed as a Deno shim pinned to the `v1beta2` tag of github.com/Andrew-Jayne/ExplicitJS.
+- **ExplicitJS** — no single-letter vars, no ternaries, no anonymous functions at all, no single-use functions, no optional params. Both opt-in extras (`arrow` and `optional_param`) are enabled via `.explicitrc.json`, which is the strictest configuration the tool offers. Run `explicitjs src/` to check. Installed as a Deno shim pinned to the `v1beta2` tag of github.com/Andrew-Jayne/ExplicitJS.
 
-No arrow functions with implicit boolean bodies — use braces and `return`.
+No arrow functions or `function` expressions anywhere in src/ (the `arrow` extra flags every one). Lookup tables use object method shorthand (`string(value: unknown): string { ... }`), callbacks that need closure state are bound class methods (`this.method.bind(this)`), and stateless handlers are module-level named functions. A module-level function referenced only from inside another function or method is not flagged as single-use; one defined and called in the same scope is.
 No ternaries — use if/else.
 Descriptive variable names everywhere, including generic type parameters (`Schema` not `S`, `Key` not `K`).
 No `undefined`, `??`, or `||` in src/ — absence is always `null`. Optional args are `arg: type | null = null` (defaults in the parameter list, not the body); internal fields are `| null`. For fallbacks, declare `let thing: type | null = null` and assign in an explicit `if`. Platform APIs that produce `undefined` are wrapped at the boundary: `Map` reads go through a `has()` check + `as` cast (see `lookupKey()` in stateTree.ts), optional `KeyDef` props are detected with `Object.hasOwn()`. `KeyDef` may keep `?` props for schema-author ergonomics; the constructor normalizes them to `null` immediately.

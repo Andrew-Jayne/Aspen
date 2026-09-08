@@ -12,16 +12,50 @@ export interface StorageBackend {
 
 const OBJECT_STORE_NAME = "aspen-kv";
 
-function awaitRequest<Result>(request: IDBRequest<Result>): Promise<Result> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => {
-      resolve(request.result);
-    };
-    request.onerror = () => {
-      reject(request.error);
-    };
-  });
+/**
+ * Settles a promise from an IDBRequest's `success` / `error` events using
+ * bound methods, so the request needs no anonymous callbacks. Bound methods
+ * rather than an EventListenerObject because fake-indexeddb (used in tests)
+ * invokes `handleEvent` with `this` set to the request, not the listener.
+ */
+class RequestSettler<Result> {
+  readonly promise: Promise<Result>;
+  private readonly request: IDBRequest<Result>;
+  private readonly resolve: (value: Result) => void;
+  private readonly reject: (reason: unknown) => void;
+
+  constructor(request: IDBRequest<Result>) {
+    const { promise, resolve, reject } = Promise.withResolvers<Result>();
+    this.promise = promise;
+    this.resolve = resolve;
+    this.reject = reject;
+    this.request = request;
+    request.onsuccess = this.settleSuccess.bind(this);
+    request.onerror = this.settleError.bind(this);
+  }
+
+  private settleSuccess(): void {
+    this.resolve(this.request.result);
+  }
+
+  private settleError(): void {
+    this.reject(this.request.error);
+  }
 }
+
+function awaitRequest<Result>(request: IDBRequest<Result>): Promise<Result> {
+  return new RequestSettler(request).promise;
+}
+
+function createObjectStoreOnUpgrade(event: IDBVersionChangeEvent): void {
+  (event.target as IDBOpenDBRequest).result.createObjectStore(
+    OBJECT_STORE_NAME,
+  );
+}
+
+type WriteOperation =
+  | { kind: "put"; key: string; value: string }
+  | { kind: "delete"; key: string };
 
 /**
  * A StorageBackend backed by IndexedDB. IndexedDB is async-only, so this
@@ -43,29 +77,24 @@ export class IndexedDBBackend implements StorageBackend {
 
   static async open(databaseName: string): Promise<IndexedDBBackend> {
     const openRequest = indexedDB.open(databaseName, 1);
-    openRequest.onupgradeneeded = () => {
-      openRequest.result.createObjectStore(OBJECT_STORE_NAME);
-    };
+    openRequest.onupgradeneeded = createObjectStoreOnUpgrade;
     const DATABASE = await awaitRequest(openRequest);
 
+    // Both requests are issued synchronously so they share one transaction
+    // and see one consistent snapshot; getAllKeys/getAll return in key order.
+    const store = DATABASE.transaction(
+      OBJECT_STORE_NAME,
+      "readonly",
+    ).objectStore(OBJECT_STORE_NAME);
+    const [keys, values] = await Promise.all([
+      awaitRequest(store.getAllKeys()),
+      awaitRequest(store.getAll()),
+    ]);
+
     const CACHE = new Map<string, string>();
-    await new Promise<void>((resolve, reject) => {
-      const cursorRequest = DATABASE.transaction(OBJECT_STORE_NAME, "readonly")
-        .objectStore(OBJECT_STORE_NAME)
-        .openCursor();
-      cursorRequest.onsuccess = () => {
-        const cursor = cursorRequest.result;
-        if (cursor === null) {
-          resolve();
-          return;
-        }
-        CACHE.set(String(cursor.key), String(cursor.value));
-        cursor.continue();
-      };
-      cursorRequest.onerror = () => {
-        reject(cursorRequest.error);
-      };
-    });
+    for (const [index, key] of keys.entries()) {
+      CACHE.set(String(key), String(values[index]));
+    }
 
     return new IndexedDBBackend(DATABASE, CACHE);
   }
@@ -79,16 +108,12 @@ export class IndexedDBBackend implements StorageBackend {
 
   setItem(key: string, value: string): void {
     this.cache.set(key, value);
-    this.queueWrite((store) => {
-      return store.put(value, key);
-    });
+    this.queueWrite({ kind: "put", key, value });
   }
 
   removeItem(key: string): void {
     this.cache.delete(key);
-    this.queueWrite((store) => {
-      return store.delete(key);
-    });
+    this.queueWrite({ kind: "delete", key });
   }
 
   key(index: number): string | null {
@@ -114,21 +139,27 @@ export class IndexedDBBackend implements StorageBackend {
     this.database.close();
   }
 
-  private queueWrite<WriteResult>(
-    operation: (store: IDBObjectStore) => IDBRequest<WriteResult>,
-  ): void {
-    this.pendingWrites = this.pendingWrites.then(async () => {
-      try {
-        await awaitRequest(
-          operation(
-            this.database
-              .transaction(OBJECT_STORE_NAME, "readwrite")
-              .objectStore(OBJECT_STORE_NAME),
-          ),
-        );
-      } catch (error) {
-        console.error("[Aspen] IndexedDB write failed:", error);
+  private queueWrite(operation: WriteOperation): void {
+    this.pendingWrites = this.persistAfter(this.pendingWrites, operation);
+  }
+
+  /** Runs `operation` against IndexedDB once `previous` has settled. */
+  private async persistAfter(
+    previous: Promise<void>,
+    operation: WriteOperation,
+  ): Promise<void> {
+    await previous;
+    try {
+      const store = this.database
+        .transaction(OBJECT_STORE_NAME, "readwrite")
+        .objectStore(OBJECT_STORE_NAME);
+      if (operation.kind === "put") {
+        await awaitRequest(store.put(operation.value, operation.key));
+      } else {
+        await awaitRequest(store.delete(operation.key));
       }
-    });
+    } catch (error) {
+      console.error("[Aspen] IndexedDB write failed:", error);
+    }
   }
 }
