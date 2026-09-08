@@ -17,7 +17,7 @@ export interface KeyDef {
   default: unknown;
   allowed?: unknown[];
   aliases?: string[];
-  onUpdate?: (() => void)[];
+  onUpdate?: readonly (() => void)[];
   serialize?: (value: unknown) => string;
   deserialize?: (raw: string) => unknown;
 }
@@ -31,7 +31,7 @@ export interface ResolvedKey {
   default: unknown;
   allowed: unknown[] | null;
   aliases: string[] | null;
-  onUpdate: (() => void)[];
+  onUpdate: readonly (() => void)[];
   serialize: (value: unknown) => string;
   deserialize: (raw: string) => unknown;
   validate: (value: unknown) => boolean;

@@ -61,9 +61,44 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
         aliases = def.aliases as string[];
       }
 
-      let onUpdate: (() => void)[] = [];
+      let onUpdate: readonly (() => void)[] = [];
       if (Object.hasOwn(def, "onUpdate") === true) {
-        onUpdate = def.onUpdate as (() => void)[];
+        const callbacks = def.onUpdate as unknown;
+        if (Array.isArray(callbacks) === false) {
+          throw new Error(
+            `[Aspen] onUpdate for "${name}" must be an array of functions`,
+          );
+        }
+        const seen = new Set<unknown>();
+        for (const callback of callbacks as unknown[]) {
+          if (typeof callback !== "function") {
+            throw new Error(
+              `[Aspen] onUpdate for "${name}" contains a non-function. ` +
+                "Pass render functions by reference (renderTheme), " +
+                "not their result (renderTheme()).",
+            );
+          }
+          if (callback.name === "") {
+            throw new Error(
+              `[Aspen] onUpdate for "${name}" contains an anonymous function. ` +
+                "Declare a named render function and reference it by name.",
+            );
+          }
+          if (callback.length > 0) {
+            throw new Error(
+              `[Aspen] onUpdate function "${callback.name}" for "${name}" ` +
+                "declares parameters. Render functions take no arguments " +
+                "and read state via get().",
+            );
+          }
+          if (seen.has(callback) === true) {
+            throw new Error(
+              `[Aspen] onUpdate for "${name}" lists "${callback.name}" more than once`,
+            );
+          }
+          seen.add(callback);
+        }
+        onUpdate = Object.freeze([...callbacks]) as readonly (() => void)[];
       }
 
       let serialize = serializers[type];

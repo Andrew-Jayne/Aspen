@@ -3,7 +3,7 @@
 Bun-only project. No Node, no npm, no yarn.
 
 - `bun run build` — bundle `src/index.ts` to `dist/aspen.min.js`
-- `bun run test` — run test suite (60 tests across 8 files in `tests/`)
+- `bun run test` — run test suite (67 tests across 8 files in `tests/`)
 - `bun run lint` — biome check + explicitjs
 - `bun run format` — biome auto-fix
 - `bun run check` — lint then test
@@ -34,14 +34,14 @@ src/          — library source (TS)
   validation.ts   built-in type validators
 tests/          — bun test files
   helpers.ts      MockStorage + beforeEach/afterEach (preloaded)
-example/        — vanilla JS example app (single HTML file + aspen.min.js)
+example/        — vanilla JS example app (index.html + app.js) and hello-world.html
   persistence-server/  FastAPI reference server for remote persistence
 dist/           — build output (gitignored)
 ```
 
 ## API
 
-`StateTree` is the main export. Constructed with a namespace, a schema object, and two optional positional args: `storage` (a `StorageBackend`, defaults to localStorage) and `persistenceUrl` (`string | null`, URL for remote push/pull). Six types: `string`, `number`, `boolean`, `list`, `dict`, `json`. Keys are either `persistent` (storage backend) or ephemeral (in-memory Map). `onUpdate` callbacks fire on `set()` and `bootstrap()`.
+`StateTree` is the main export. Constructed with a namespace, a schema object, and two optional positional args: `storage` (a `StorageBackend`, defaults to localStorage) and `persistenceUrl` (`string | null`, URL for remote push/pull). Six types: `string`, `number`, `boolean`, `list`, `dict`, `json`. Keys are either `persistent` (storage backend) or ephemeral (in-memory Map). `onUpdate` callbacks fire on `set()` and `bootstrap()`. The constructor enforces that each is a named, zero-arg function with no duplicates, and freezes the list (see README "Render functions").
 
 `IndexedDBBackend` is a StorageBackend over IndexedDB: `await IndexedDBBackend.open(name)` hydrates an in-memory mirror, reads are sync from the mirror, writes persist in the background (`flush()` awaits them, `close()` flushes then closes).
 

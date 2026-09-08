@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aspen Hello World</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; }
+    button { font: inherit; padding: 0.5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1 id="greeting"></h1>
+  <p>Clicked <span id="count"></span> times.</p>
+  <button type="button" id="increment">Click me</button>
+  <button type="button" id="reset">Reset</button>
+
+  <script type="module">
+    import { StateTree } from "./aspen.min.js";
+
+    // 1. Declare the tree. Every key lists, by name, the render functions
+    //    that depend on it. This schema is the complete map of what reacts
+    //    to what; nothing subscribes anywhere else.
+    const State = new StateTree("hello.", {
+      name: {
+        type: "string",
+        persistent: false,
+        default: "world",
+        onUpdate: [renderGreeting],
+      },
+      clicks: {
+        type: "number",
+        persistent: true,
+        default: 0,
+        onUpdate: [renderCount, renderGreeting],
+      },
+    });
+
+    // 2. Render functions take no arguments. Each one selects the element it
+    //    owns and reads whatever it needs through State.get(). Because they
+    //    pull, the same function is correct on bootstrap, on set(), and after
+    //    a pullPersistent() from a server.
+    function renderGreeting() {
+      let greeting = `Hello, ${State.get("name")}!`;
+      if (State.get("clicks") >= 10) {
+        greeting = `Hello, ${State.get("name")}! You are persistent.`;
+      }
+      document.getElementById("greeting").textContent = greeting;
+    }
+
+    function renderCount() {
+      document.getElementById("count").textContent = String(State.get("clicks"));
+    }
+
+    // 3. Event handlers only ever call set(). They never touch the DOM;
+    //    the schema decides which render functions run.
+    document.getElementById("increment").addEventListener("click", function increment() {
+      State.set("clicks", State.get("clicks") + 1);
+    });
+    document.getElementById("reset").addEventListener("click", function reset() {
+      State.set("clicks", 0);
+    });
+
+    // 4. Heal storage, then paint the initial UI from stored or default state.
+    State.validateStorage();
+    State.bootstrap();
+  </script>
+</body>
+</html>
