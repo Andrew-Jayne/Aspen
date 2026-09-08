@@ -89,6 +89,9 @@ describe("pullPersistent", () => {
     });
 
     let themeCalls = 0;
+    function countTheme() {
+      themeCalls++;
+    }
     const state = new StateTree(
       "app.",
       {
@@ -96,11 +99,7 @@ describe("pullPersistent", () => {
           type: "string",
           persistent: true,
           default: "light",
-          onUpdate: [
-            () => {
-              themeCalls++;
-            },
-          ],
+          onUpdate: [countTheme],
         },
         size: { type: "number", persistent: true, default: 16 },
       },

@@ -159,12 +159,15 @@ describe("exportPersistent / importPersistent", () => {
 
   test("importPersistent restores state and fires onUpdate", () => {
     let themeCalls = 0;
+    function countTheme() {
+      themeCalls++;
+    }
     const state = new StateTree("app.", {
       theme: {
         type: "string",
         persistent: true,
         default: "light",
-        onUpdate: [() => themeCalls++],
+        onUpdate: [countTheme],
       },
       size: { type: "number", persistent: true, default: 16 },
     });
