@@ -2,6 +2,8 @@ _refs
 .DS_Store
 **/.DS_Store
 *.min.js
+.claude/
+.claude-tmp/
 
 # Logs
 logs
