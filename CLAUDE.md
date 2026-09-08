@@ -34,17 +34,18 @@ src/          — library source (TS)
   validation.ts   built-in type validators
 tests/          — bun test files
   helpers.ts      MockStorage + beforeEach/afterEach (preloaded)
-example/        — vanilla JS example app (index.html + app.js) and hello-world.html
+example/        — vanilla JS example app (index.html + app.js), hello-world.html,
+                  and the in-depth guides moved out of the README (*.md)
   persistence-server/  FastAPI reference server for remote persistence
 dist/           — build output (gitignored)
 ```
 
 ## API
 
-`StateTree` is the main export. Constructed with a namespace, a schema object, and two optional positional args: `storage` (a `StorageBackend`, defaults to localStorage) and `persistenceUrl` (`string | null`, URL for remote push/pull). Six types: `string`, `number`, `boolean`, `list`, `dict`, `json`. Keys are either `persistent` (storage backend) or ephemeral (in-memory Map). `onUpdate` callbacks fire on `set()` and `bootstrap()`. The constructor enforces that each is a named, zero-arg function with no duplicates, and freezes the list (see README "Render functions").
+`StateTree` is the main export. Constructed with a namespace, a schema object, and two optional positional args: `storage` (a `StorageBackend`, defaults to localStorage) and `persistenceUrl` (`string | null`, URL for remote push/pull). Six types: `string`, `number`, `boolean`, `list`, `dict`, `json`. Keys are either `persistent` (storage backend) or ephemeral (in-memory Map). `onUpdate` callbacks fire on `set()` and `bootstrap()`. The constructor enforces that each is a named, zero-arg function with no duplicates, and freezes the list (see example/render-functions.md).
 
 `IndexedDBBackend` is a StorageBackend over IndexedDB: `await IndexedDBBackend.open(name)` hydrates an in-memory mirror, reads are sync from the mirror, writes persist in the background (`flush()` awaits them, `close()` flushes then closes).
 
-Public methods: `get()`, `set()`, `bootstrap()`, `validateStorage()`, `exportPersistent()`, `importPersistent()`, `pushPersistent()`, `pullPersistent()`.
+Public members: `keys` (frozen enum of schema key names), `get()`, `set()`, `bootstrap()`, `validateStorage()`, `exportPersistent()`, `importPersistent()`, `pushPersistent()`, `pullPersistent()`.
 
 Remote persistence: `pushPersistent()` PUTs `exportPersistent()` JSON to the persistence URL; `pullPersistent()` GETs it back (404 → resolves false). FastAPI reference server in `example/persistence-server/main.py`.
