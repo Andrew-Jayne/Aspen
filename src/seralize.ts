@@ -1,7 +1,5 @@
-// ---- Built-in Serializers ---------------------------------------------------
 import type { AspenType } from "./types";
 
-// ---- Built-in Serializers ---------------------------------------------------
 export const serializers: Record<AspenType, (value: unknown) => string> = {
   string(value: unknown): string {
     return value as string;
@@ -23,8 +21,6 @@ export const serializers: Record<AspenType, (value: unknown) => string> = {
     return JSON.stringify(value);
   },
 };
-
-// ---- Built-in Deserializers -------------------------------------------------
 
 export const deserializers: Record<AspenType, (raw: string) => unknown> = {
   string(raw: string): unknown {

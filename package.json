@@ -1,6 +1,6 @@
 {
   "name": "aspen",
-  "version": "1.0.0",
+  "version": "v1beta5",
   "module": "src/index.ts",
   "main": "dist/aspen.min.js",
   "types": "dist/aspen.ts",
@@ -22,14 +22,13 @@
     "test": "bun test",
     "lint": "biome check src/ && explicitjs src/",
     "format": "biome check --write src/",
-    "check": "bun run lint && bun run test",
-    "example": "bun run build && cp dist/aspen.min.js example/ && bunx serve example/"
+    "check": "bun run lint && bun run test"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.12",
+    "@biomejs/biome": "latest",
     "@types/bun": "latest",
     "explicitjs": "https://github.com/Andrew-Jayne/ExplicitJS/releases/download/v1beta3/explicitjs-1beta3.tgz",
-    "fake-indexeddb": "^6.2.5"
+    "fake-indexeddb": "latest5"
   },
   "peerDependencies": {
     "typescript": "^6"

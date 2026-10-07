@@ -13,7 +13,6 @@ function stripImports(source: string): string {
 }
 
 const bundle = `// Aspen — Application State Persistence Event Network
-// Single-file TypeScript bundle — drop into your project and import directly.
 // https://github.com/Andrew-Jayne/Aspen
 // AGPL-3.0
 

@@ -1,5 +1,3 @@
-// ---- StateTree --------------------------------------------------------------
-
 import { deserializers, serializers } from "./seralize.ts";
 import type { StorageBackend } from "./storage.ts";
 import type {
@@ -12,11 +10,6 @@ import type {
 import { validators } from "./validation.ts";
 
 export class StateTree<const Schema extends Record<string, KeyDef>> {
-  /**
-   * Every schema key name, mapped to itself and frozen. Use it in place of
-   * string literals: `State.get(State.keys.theme)`. A typo is a compile error
-   * in TypeScript and an `undefined` key (which `get`/`set` reject) in JS.
-   */
   readonly keys: KeyNames<Schema>;
 
   private readonly namespace: string;
@@ -320,10 +313,6 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     }
   }
 
-  /**
-   * PUTs `exportPersistent()` as JSON to the persistence URL. Pass a URL to
-   * override the one from the constructor options.
-   */
   async pushPersistent(urlOverride: string | null = null): Promise<void> {
     const targetUrl = this.resolvePersistenceUrl(urlOverride);
     const response = await fetch(targetUrl, {
@@ -338,11 +327,6 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     }
   }
 
-  /**
-   * GETs JSON state from the persistence URL and feeds it through
-   * `importPersistent()`. Returns false when the server has no saved state
-   * (HTTP 404); returns true when state was imported.
-   */
   async pullPersistent(urlOverride: string | null = null): Promise<boolean> {
     const targetUrl = this.resolvePersistenceUrl(urlOverride);
     const response = await fetch(targetUrl, {
@@ -376,8 +360,7 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
     }
     if (targetUrl === null) {
       throw new Error(
-        "[Aspen] No persistence URL configured. Pass one in the constructor " +
-          "options or as an argument.",
+        "[Aspen] No persistence URL configured. Pass one in the constructor options or as an argument.",
       );
     }
     return targetUrl;
