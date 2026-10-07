@@ -1,4 +1,3 @@
-// ---- Built-in Validators ----------------------------------------------------
 import type { AspenType } from "./types";
 
 export const validators: Record<AspenType, (value: unknown) => boolean> = {
