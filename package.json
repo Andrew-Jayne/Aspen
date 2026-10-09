@@ -18,7 +18,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun scripts/build.ts && bun scripts/bundle-ts.ts",
+    "build": "bun scripts/bundle-js.ts && bun scripts/bundle-ts.ts",
+    "build:ts-only": "bun scripts/bundle-ts.ts",
+    "build:js-only": "bun scripts/bundle-js.ts",
     "lint": "biome check src/ && explicitjs src/",
     "format": "biome check --write src/"
   },
