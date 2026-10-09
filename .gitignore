@@ -1,6 +1,15 @@
+# MacOS
 .DS_Store
+*/.DS_Store
+
+#Build Artifacts
 *.min.js
+
+# AI Nonsense
 .claude/
+
+# Lock File because yolo
+bun.lock
 
 # Logs
 logs

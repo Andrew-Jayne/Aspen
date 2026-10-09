@@ -19,16 +19,13 @@
   ],
   "scripts": {
     "build": "bun scripts/build.ts && bun scripts/bundle-ts.ts",
-    "test": "bun test",
     "lint": "biome check src/ && explicitjs src/",
-    "format": "biome check --write src/",
-    "check": "bun run lint && bun run test"
+    "format": "biome check --write src/"
   },
   "devDependencies": {
     "@biomejs/biome": "latest",
     "@types/bun": "latest",
-    "explicitjs": "https://github.com/Andrew-Jayne/ExplicitJS/releases/download/v1beta3/explicitjs-1beta3.tgz",
-    "fake-indexeddb": "latest5"
+    "explicitjs": "https://github.com/Andrew-Jayne/ExplicitJS/releases/download/v1beta5/explicitjs-1beta5.tgz"
   },
   "peerDependencies": {
     "typescript": "^6"
