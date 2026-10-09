@@ -1,12 +1,7 @@
 import { deserializers, serializers } from "./seralize.ts";
 import type { StorageBackend } from "./storage.ts";
-import type {
-  AspenType,
-  KeyDef,
-  KeyNames,
-  ResolvedKey,
-  TypeMap,
-} from "./types.ts";
+// biome-ignore format: preserve formatting -  because the bundler import striper is too dumb to handle multi line
+import type {AspenType, KeyDef, KeyNames, ResolvedKey, TypeMap} from "./types.ts";
 import { validators } from "./validation.ts";
 
 export class StateTree<const Schema extends Record<string, KeyDef>> {

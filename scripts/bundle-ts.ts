@@ -1,31 +1,34 @@
-const types = await Bun.file("src/types.ts").text();
-const storage = await Bun.file("src/storage.ts").text();
-const serialize = await Bun.file("src/seralize.ts").text();
-const validation = await Bun.file("src/validation.ts").text();
-const stateTree = await Bun.file("src/stateTree.ts").text();
+const packageJson = await Bun.file("package.json").json();
 
 function stripImports(source: string): string {
+  // strip comments and import statements (only works for single line imports becasuse skill issue)
   return source
     .split("\n")
     .filter((line) => line.startsWith("import ") === false)
+    .filter((line) => line.startsWith("// ") === false)
     .join("\n")
     .trim();
 }
 
-const bundle = `// Aspen — Application State Persistence Event Network
-// https://github.com/Andrew-Jayne/Aspen
-// AGPL-3.0
+// this is an fstring build of the source without imports, kinda jank lol
+const BUNDLE = `\
+/**
+  Aspen: Application State Persistence Event Network @ ${packageJson.version}
+ * @source ${packageJson.repository.url}
+ * @license ${packageJson.license}
+ * @commit ${(await Bun.$`git rev-parse --short HEAD`.text()).trim()}
+ */
 
-${stripImports(types)}
+${stripImports(await Bun.file("src/types.ts").text())}
 
-${stripImports(storage)}
+${stripImports(await Bun.file("src/storage.ts").text())}
 
-${stripImports(serialize)}
+${stripImports(await Bun.file("src/seralize.ts").text())}
 
-${stripImports(validation)}
+${stripImports(await Bun.file("src/validation.ts").text())}
 
-${stripImports(stateTree)}
+${stripImports(await Bun.file("src/stateTree.ts").text())}
 `;
 
-await Bun.write("dist/aspen.ts", bundle);
+await Bun.write("dist/aspen.ts", BUNDLE);
 console.log("dist/aspen.ts written");
