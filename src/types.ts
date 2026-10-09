@@ -17,11 +17,11 @@ export interface KeyDef {
   type: AspenType;
   persistent: boolean;
   default: unknown;
-  allowed?: unknown[];
-  aliases?: string[];
-  onUpdate?: readonly (() => void)[];
-  serialize?: (value: unknown) => string;
-  deserialize?: (raw: string) => unknown;
+  allowed: unknown[] | null;
+  aliases: string[] | null;
+  onUpdate: readonly (() => void)[] | null;
+  serialize: (value: unknown) => string | null;
+  deserialize: (raw: string) => unknown | null;
 }
 
 export interface ResolvedKey {
