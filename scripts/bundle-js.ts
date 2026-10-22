@@ -1,22 +1,27 @@
-const packageJson = await Bun.file("package.json").json();
-const result = await Bun.build({
-  entrypoints: ["src/index.ts"],
+import { execSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { build } from "esbuild";
+
+const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+const result = await build({
+  entryPoints: ["src/index.ts"],
+  bundle: true,
   minify: true,
+  format: "esm",
+  platform: "browser",
+  write: false,
 });
 
 const banner = `/**
   Aspen: Application State Persistence Event Network @ ${packageJson.version}
  * @source ${packageJson.repository.url}
  * @license ${packageJson.license}
- * @commit ${(await Bun.$`git rev-parse --short HEAD`.text()).trim()}
+ * @commit ${execSync("git rev-parse --short HEAD").toString().trim()}
  */`;
 
-if (result.outputs[0] !== undefined) {
-  await Bun.write(
-    "dist/aspen.min.js",
-    `${banner}\n${await result.outputs[0].text()}`,
-  );
+if (result.outputFiles[0] !== undefined) {
+  writeFileSync("dist/aspen.min.js", `${banner}\n${result.outputFiles[0].text}`);
   console.log("dist/aspen.min.js written");
 } else {
-  console.error("Bun failed to build");
+  console.error("esbuild failed to build");
 }
