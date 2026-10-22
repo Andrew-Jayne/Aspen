@@ -16,13 +16,17 @@ export class StateTree<const Schema extends Record<string, KeyDef>> {
   constructor(
     namespace: string,
     schema: Schema,
-    storage: StorageBackend = localStorage,
+    storage: StorageBackend | null = null,
     persistenceUrl: string | null = null,
   ) {
     this.namespace = namespace;
     this.registry = new Map();
     this.memory = new Map();
-    this.storage = storage;
+    if (storage === null) {
+      this.storage = localStorage;
+    } else {
+      this.storage = storage;
+    }
     this.persistenceUrl = persistenceUrl;
 
     const checkedKeys = new Set<string>();

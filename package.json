@@ -28,7 +28,7 @@
     "@biomejs/biome": "latest",
     "@types/node": "^26",
     "esbuild": "^0.28.2",
-    "explicitjs": "https://github.com/Andrew-Jayne/ExplicitJS/releases/download/v1beta5/explicitjs-1beta5.tgz",
+    "explicitjs": "https://github.com/Andrew-Jayne/ExplicitJS/releases/download/v1beta6/explicitjs-1beta6.tgz",
     "typescript": "^7.0.2"
   },
   "peerDependencies": {

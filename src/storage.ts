@@ -118,25 +118,19 @@ export class IndexedDBBackend implements StorageBackend {
   }
 
   private queueWrite(operation: WriteOperation): void {
-    this.pendingWrites = this.persistAfter(this.pendingWrites, operation);
-  }
-
-  private async persistAfter(
-    previous: Promise<void>,
-    operation: WriteOperation,
-  ): Promise<void> {
-    await previous;
-    try {
-      const store = this.database
-        .transaction(OBJECT_STORE_NAME, "readwrite")
-        .objectStore(OBJECT_STORE_NAME);
-      if (operation.kind === "put") {
-        await awaitRequest(store.put(operation.value, operation.key));
-      } else {
-        await awaitRequest(store.delete(operation.key));
+    this.pendingWrites = this.pendingWrites.then(async () => {
+      try {
+        const store = this.database
+          .transaction(OBJECT_STORE_NAME, "readwrite")
+          .objectStore(OBJECT_STORE_NAME);
+        if (operation.kind === "put") {
+          await awaitRequest(store.put(operation.value, operation.key));
+        } else {
+          await awaitRequest(store.delete(operation.key));
+        }
+      } catch (error) {
+        console.error("[Aspen] IndexedDB write failed:", error);
       }
-    } catch (error) {
-      console.error("[Aspen] IndexedDB write failed:", error);
-    }
+    });
   }
 }
