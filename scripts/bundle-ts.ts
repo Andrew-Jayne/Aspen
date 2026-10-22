@@ -1,4 +1,7 @@
-const packageJson = await Bun.file("package.json").json();
+import { execSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+
+const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 
 function stripImports(source: string): string {
   // strip comments and import statements (only works for single line imports becasuse skill issue)
@@ -16,19 +19,19 @@ const BUNDLE = `\
   Aspen: Application State Persistence Event Network @ ${packageJson.version}
  * @source ${packageJson.repository.url}
  * @license ${packageJson.license}
- * @commit ${(await Bun.$`git rev-parse --short HEAD`.text()).trim()}
+ * @commit ${execSync("git rev-parse --short HEAD").toString().trim()}
  */
 
-${stripImports(await Bun.file("src/types.ts").text())}
+${stripImports(readFileSync("src/types.ts", "utf8"))}
 
-${stripImports(await Bun.file("src/storage.ts").text())}
+${stripImports(readFileSync("src/storage.ts", "utf8"))}
 
-${stripImports(await Bun.file("src/seralize.ts").text())}
+${stripImports(readFileSync("src/seralize.ts", "utf8"))}
 
-${stripImports(await Bun.file("src/validation.ts").text())}
+${stripImports(readFileSync("src/validation.ts", "utf8"))}
 
-${stripImports(await Bun.file("src/stateTree.ts").text())}
+${stripImports(readFileSync("src/stateTree.ts", "utf8"))}
 `;
 
-await Bun.write("dist/aspen.ts", BUNDLE);
+writeFileSync("dist/aspen.ts", BUNDLE);
 console.log("dist/aspen.ts written");
