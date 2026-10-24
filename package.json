@@ -29,10 +29,10 @@
     "@types/node": "^26",
     "esbuild": "^0.28.2",
     "explicitjs": "https://github.com/Andrew-Jayne/ExplicitJS/releases/download/v1beta6/explicitjs-1beta6.tgz",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3"
   },
   "peerDependencies": {
-    "typescript": "^7"
+    "typescript": "^6"
   },
   "license": "AGPL-3.0",
   "repository": {
