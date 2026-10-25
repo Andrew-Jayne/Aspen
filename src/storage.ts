@@ -1,11 +1,3 @@
-export interface StorageBackend {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-  key(index: number): string | null;
-  readonly length: number;
-}
-
 const OBJECT_STORE_NAME = "aspen-kv";
 
 class RequestSettler<Result> {
@@ -47,7 +39,7 @@ type WriteOperation =
   | { kind: "put"; key: string; value: string }
   | { kind: "delete"; key: string };
 
-export class IndexedDBBackend implements StorageBackend {
+export class IndexedDBBackend {
   private readonly database: IDBDatabase;
   private readonly cache: Map<string, string>;
   private pendingWrites: Promise<void>;
@@ -86,14 +78,14 @@ export class IndexedDBBackend implements StorageBackend {
     return null;
   }
 
-  setItem(key: string, value: string): void {
+  setItem(key: string, value: string): Promise<void> {
     this.cache.set(key, value);
-    this.queueWrite({ kind: "put", key, value });
+    return this.queueWrite({ kind: "put", key, value });
   }
 
-  removeItem(key: string): void {
+  removeItem(key: string): Promise<void> {
     this.cache.delete(key);
-    this.queueWrite({ kind: "delete", key });
+    return this.queueWrite({ kind: "delete", key });
   }
 
   key(index: number): string | null {
@@ -117,7 +109,7 @@ export class IndexedDBBackend implements StorageBackend {
     this.database.close();
   }
 
-  private queueWrite(operation: WriteOperation): void {
+  private queueWrite(operation: WriteOperation): Promise<void> {
     this.pendingWrites = this.pendingWrites.then(async () => {
       try {
         const store = this.database
@@ -132,5 +124,6 @@ export class IndexedDBBackend implements StorageBackend {
         console.error("[Aspen] IndexedDB write failed:", error);
       }
     });
+    return this.pendingWrites;
   }
 }

@@ -1,4 +1,4 @@
+export { AspenKey } from "./key";
 export { StateTree } from "./stateTree";
-export type { StorageBackend } from "./storage";
 export { IndexedDBBackend } from "./storage";
-export type { AspenType, KeyDef, KeyNames, TypeMap } from "./types";
+export type { AspenType, Json, KeyDef, Live, ValueOf } from "./types";

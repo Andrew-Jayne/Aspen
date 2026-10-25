@@ -30,6 +30,8 @@ ${stripImports(readFileSync("src/seralize.ts", "utf8"))}
 
 ${stripImports(readFileSync("src/validation.ts", "utf8"))}
 
+${stripImports(readFileSync("src/key.ts", "utf8"))}
+
 ${stripImports(readFileSync("src/stateTree.ts", "utf8"))}
 `;
 

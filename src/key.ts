@@ -1,0 +1,240 @@
+import { deserializers, serializers } from "./seralize.ts";
+import type { IndexedDBBackend } from "./storage.ts";
+// biome-ignore format: preserve formatting -  because the bundler import striper is too dumb to handle multi line
+import type {AspenType, KeyDef, KeyOptions, ValueOf, WidenOf} from "./types.ts";
+import { validators } from "./validation.ts";
+
+function orNull<Value>(value: Value | null | undefined): Value | null {
+  if (value === undefined) return null;
+  return value;
+}
+
+interface Binding {
+  name: string;
+  storageKey: string;
+  storage: IndexedDBBackend;
+  ephemeralStore: Map<string, unknown>;
+  onUpdate: readonly (() => void)[];
+  validate: (value: unknown) => boolean;
+  serialize: (value: unknown) => string;
+  deserialize: (raw: string) => unknown;
+}
+
+interface BooleanKey {
+  readonly definition: { readonly type: BooleanConstructor };
+  read(): boolean;
+  update(value: boolean): Promise<void>;
+}
+
+export class AspenKey<
+  Type extends AspenType = AspenType,
+  Value extends ValueOf<Type> = ValueOf<Type>,
+> {
+  readonly definition: KeyDef<Type, Value>;
+  private binding: Binding | null;
+
+  constructor(options: KeyOptions<Type, Value>) {
+    this.definition = {
+      type: options.type,
+      persistent: options.persistent,
+      default: options.default,
+      bootMirror: orNull(options.bootMirror),
+      allowed: orNull(options.allowed),
+      aliases: orNull(options.aliases),
+      onUpdate: orNull(options.onUpdate),
+      serialize: orNull(options.serialize),
+      deserialize: orNull(options.deserialize),
+    };
+    this.binding = null;
+  }
+
+  get storageKey(): string {
+    return this.bound().storageKey;
+  }
+
+  bind(
+    name: string,
+    namespace: string,
+    storage: IndexedDBBackend,
+    ephemeralStore: Map<string, unknown>,
+  ): void {
+    const definition = this.definition;
+
+    const validate = validators.get(definition.type);
+    const serializeForType = serializers.get(definition.type);
+    const deserializeForType = deserializers.get(definition.type);
+    if (
+      validate === undefined ||
+      serializeForType === undefined ||
+      deserializeForType === undefined
+    ) {
+      throw new Error(
+        `[Aspen] Unknown type for key "${name}". ` +
+          "Valid types: String, Number, Boolean, Array, Object",
+      );
+    }
+
+    if (validate(definition.default) === false) {
+      throw new Error(
+        `[Aspen] Default value for "${name}" does not match declared type "${definition.type.name}"`,
+      );
+    }
+
+    if (
+      definition.allowed !== null &&
+      definition.allowed.includes(definition.default) === false
+    ) {
+      throw new Error(
+        `[Aspen] Default value for "${name}" is not in the allowed list`,
+      );
+    }
+
+    if (definition.bootMirror === true && definition.persistent === false) {
+      throw new Error(
+        `[Aspen] bootMirror on "${name}" requires persistent: true`,
+      );
+    }
+
+    let onUpdate: readonly (() => void)[] = [];
+    if (definition.onUpdate !== null) {
+      const callbacks = definition.onUpdate as unknown;
+      if (Array.isArray(callbacks) === false) {
+        throw new Error(
+          `[Aspen] onUpdate for "${name}" must be an array of functions`,
+        );
+      }
+      const seen = new Set<unknown>();
+      for (const callback of callbacks as unknown[]) {
+        if (typeof callback !== "function") {
+          throw new Error(
+            `[Aspen] onUpdate for "${name}" contains a non-function. ` +
+              "Pass render functions by reference (renderTheme), " +
+              "not their result (renderTheme()).",
+          );
+        }
+        if (callback.name === "") {
+          throw new Error(
+            `[Aspen] onUpdate for "${name}" contains an anonymous function. ` +
+              "Declare a named render function and reference it by name.",
+          );
+        }
+        if (callback.length > 0) {
+          throw new Error(
+            `[Aspen] onUpdate function "${callback.name}" for "${name}" ` +
+              "declares parameters. Render functions take no arguments " +
+              "and read state via tree properties.",
+          );
+        }
+        if (seen.has(callback) === true) {
+          throw new Error(
+            `[Aspen] onUpdate for "${name}" lists "${callback.name}" more than once`,
+          );
+        }
+        seen.add(callback);
+      }
+      onUpdate = Object.freeze([...callbacks]) as readonly (() => void)[];
+    }
+
+    let serialize = serializeForType;
+    if (definition.serialize !== null) {
+      serialize = definition.serialize as (value: unknown) => string;
+    }
+
+    let deserialize = deserializeForType;
+    if (definition.deserialize !== null) {
+      deserialize = definition.deserialize;
+    }
+
+    this.binding = {
+      name,
+      storageKey: namespace + name,
+      storage,
+      ephemeralStore,
+      onUpdate,
+      validate,
+      serialize,
+      deserialize,
+    };
+  }
+
+  read(): Value | WidenOf<Type> {
+    const binding = this.bound();
+
+    if (this.definition.persistent === true) {
+      const raw = binding.storage.getItem(binding.storageKey);
+      if (raw !== null) {
+        return binding.deserialize(raw) as Value;
+      }
+      return this.definition.default;
+    }
+
+    if (binding.ephemeralStore.has(binding.name) === true) {
+      return binding.ephemeralStore.get(binding.name) as Value;
+    }
+    return this.definition.default;
+  }
+
+  update(value: Value | WidenOf<Type>): Promise<void> {
+    const binding = this.bound();
+
+    if (binding.validate(value) === false) {
+      throw new Error(
+        `[Aspen] Type error on "${binding.name}": expected ${this.definition.type.name}, got ${typeof value}`,
+      );
+    }
+
+    if (this.accepts(value) === false) {
+      throw new Error(
+        `[Aspen] Value ${JSON.stringify(value)} is not allowed for "${binding.name}". ` +
+          `Allowed: ${JSON.stringify(this.definition.allowed)}`,
+      );
+    }
+
+    let pending: Promise<void> = Promise.resolve();
+    if (this.definition.persistent === true) {
+      const raw = binding.serialize(value);
+      if (this.definition.bootMirror === true) {
+        localStorage.setItem(binding.storageKey, raw);
+      }
+      pending = binding.storage.setItem(binding.storageKey, raw);
+    } else {
+      binding.ephemeralStore.set(binding.name, value);
+    }
+
+    this.notify();
+    return pending;
+  }
+
+  toggle(this: BooleanKey): Promise<void> {
+    return this.update(this.read() === false);
+  }
+
+  notify(): void {
+    for (const fn of this.bound().onUpdate) {
+      fn();
+    }
+  }
+
+  accepts(value: unknown): boolean {
+    if (this.bound().validate(value) === false) return false;
+    if (this.definition.allowed === null) return true;
+    return (this.definition.allowed as readonly unknown[]).includes(value);
+  }
+
+  serialize(value: unknown): string {
+    return this.bound().serialize(value);
+  }
+
+  deserialize(raw: string): unknown {
+    return this.bound().deserialize(raw);
+  }
+
+  private bound(): Binding {
+    if (this.binding === null) {
+      throw new Error(
+        "[Aspen] Key is not bound to a tree. Build the tree with create().",
+      );
+    }
+    return this.binding;
+  }
+}

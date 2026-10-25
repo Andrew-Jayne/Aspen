@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Aspen Todo</title>
+    <script>
+      if (localStorage.getItem("todo:darkMode") === "true") {
+        document.documentElement.dataset.theme = "dark";
+      } else {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
+    <script type="module" src="./todo.js"></script>
+  </head>
+  <body>
+    <button type="button" id="theme">Theme</button>
+    <input id="todo-draft" />
+    <button type="button" id="todo-add">Add</button>
+    <nav>
+      <button type="button" data-filter="all">All</button>
+      <button type="button" data-filter="open">Open</button>
+      <button type="button" data-filter="done">Done</button>
+    </nav>
+    <ul id="todo-list"></ul>
+    <span id="todo-counter"></span>
+  </body>
+</html>

@@ -1,38 +1,68 @@
-export type TypeMap = {
-  string: string;
-  number: number;
-  boolean: boolean;
-  list: unknown[];
-  dict: Record<string, unknown>;
-  json: unknown;
-};
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | Json[]
+  | { [key: string]: Json };
 
-export type AspenType = keyof TypeMap;
+type TypeTable =
+  | { type: StringConstructor; value: string; widen: string }
+  | { type: NumberConstructor; value: number; widen: number }
+  | { type: BooleanConstructor; value: boolean; widen: boolean }
+  | { type: ArrayConstructor; value: Json[]; widen: never }
+  | { type: ObjectConstructor; value: { [key: string]: Json }; widen: never };
 
-export type KeyNames<Schema> = {
-  readonly [Key in string & keyof Schema]: Key;
-};
+export type AspenType = TypeTable["type"];
 
-export interface KeyDef {
-  type: AspenType;
+type Row<Type extends AspenType> = Extract<TypeTable, { type: Type }>;
+
+export type ValueOf<Type extends AspenType> = Row<Type>["value"];
+
+export type WidenOf<Type extends AspenType> = Row<Type>["widen"];
+
+export interface KeyOptions<Type extends AspenType, Value> {
+  type: Type;
   persistent: boolean;
-  default: unknown;
-  allowed: unknown[] | null;
-  aliases: string[] | null;
+  default: Value;
+  bootMirror?: boolean | null;
+  allowed?: readonly Value[] | null;
+  aliases?: readonly string[] | null;
+  onUpdate?: readonly (() => void)[] | null;
+  serialize?: ((value: Value) => string) | null;
+  deserialize?: ((raw: string) => Value) | null;
+}
+
+export interface KeyDef<Type extends AspenType, Value> {
+  type: Type;
+  persistent: boolean;
+  default: Value;
+  bootMirror: boolean | null;
+  allowed: readonly Value[] | null;
+  aliases: readonly string[] | null;
   onUpdate: readonly (() => void)[] | null;
-  serialize: (value: unknown) => string | null;
-  deserialize: (raw: string) => unknown | null;
+  serialize: ((value: Value) => string) | null;
+  deserialize: ((raw: string) => Value) | null;
 }
 
-export interface ResolvedKey {
-  storageKey: string;
-  type: AspenType;
-  persistent: boolean;
-  default: unknown;
-  allowed: unknown[] | null;
-  aliases: string[] | null;
-  onUpdate: readonly (() => void)[];
-  serialize: (value: unknown) => string;
-  deserialize: (raw: string) => unknown;
-  validate: (value: unknown) => boolean;
-}
+type AnyKey = {
+  readonly definition: { readonly type: AspenType; default: unknown };
+};
+
+type KeyNamesOf<Tree> = {
+  [Name in keyof Tree]: Tree[Name] extends AnyKey ? Name : never;
+}[keyof Tree];
+
+type FieldNamesOf<Tree> = Exclude<keyof Tree, KeyNamesOf<Tree> | "$">;
+
+type KeysOf<Tree> = { [Name in KeyNamesOf<Tree>]: Tree[Name] & AnyKey };
+
+type KeyValue<Key extends AnyKey> =
+  | Key["definition"]["default"]
+  | WidenOf<Key["definition"]["type"]>;
+
+export type Live<Tree> = {
+  readonly [Name in FieldNamesOf<Tree>]: Tree[Name];
+} & {
+  readonly [Name in KeyNamesOf<Tree>]: KeyValue<KeysOf<Tree>[Name]>;
+} & { readonly $: Pick<Tree, KeyNamesOf<Tree>> };
