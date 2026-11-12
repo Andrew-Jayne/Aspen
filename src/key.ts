@@ -32,6 +32,7 @@ export class AspenKey<
 > {
   readonly definition: KeyDef<Type, Value>;
   private binding: Binding | null;
+  private dynamicCallbacks: Map<number, (() => void)[]> = new Map<number, (() => void)[]>();
 
   constructor(options: KeyOptions<Type, Value>) {
     this.definition = {
@@ -209,9 +210,50 @@ export class AspenKey<
     return this.update(this.read() === false);
   }
 
+  addOnUpdate(callback: unknown, syncWave = 0): () => void {
+    if (typeof callback !== "function") {
+      throw new Error("[Aspen] addOnUpdate callback must be a named function.");
+    }
+    const func = callback as (...args: unknown[]) => unknown;
+    if (func.name === "") {
+      throw new Error("[Aspen] addOnUpdate callback must be a named function.");
+    }
+    if (func.length > 0) {
+      throw new Error(
+        `[Aspen] addOnUpdate callback "${func.name}" declares parameters. Render functions take no arguments and read state via tree properties.`,
+      );
+    }
+    if (Number.isInteger(syncWave) === false || syncWave < 0 || syncWave > 255) {
+      throw new Error(`[Aspen] syncWave must be 0-255, got ${syncWave}`);
+    }
+    const typed = callback as () => void;
+    const existing = this.dynamicCallbacks.get(syncWave);
+    if (existing !== undefined) {
+      existing.push(typed);
+    } else {
+      const sorted = new Map<number, (() => void)[]>();
+      const keys = [...this.dynamicCallbacks.keys(), syncWave].sort((a, b) => a - b);
+      for (const key of keys) {
+        sorted.set(key, key === syncWave ? [typed] : (this.dynamicCallbacks.get(key) as (() => void)[]));
+      }
+      this.dynamicCallbacks = sorted;
+    }
+    return () => {
+      const list = this.dynamicCallbacks.get(syncWave);
+      if (list === undefined) return;
+      const idx = list.indexOf(typed);
+      if (idx !== -1) list.splice(idx, 1);
+    };
+  }
+
   notify(): void {
     for (const fn of this.bound().onUpdate) {
       fn();
+    }
+    for (const [, callbacks] of this.dynamicCallbacks) {
+      for (const fn of [...callbacks]) {
+        fn();
+      }
     }
   }
 
