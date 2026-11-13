@@ -25,12 +25,12 @@ export interface KeyOptions<Type extends AspenType, Value> {
   type: Type;
   persistent: boolean;
   default: Value;
-  bootMirror?: boolean | null;
-  allowed?: readonly Value[] | null;
-  aliases?: readonly string[] | null;
-  onUpdate?: readonly (() => void)[] | null;
-  serialize?: ((value: Value) => string) | null;
-  deserialize?: ((raw: string) => Value) | null;
+  bootMirror: boolean | null;
+  allowed: readonly Value[] | null;
+  aliases: readonly string[] | null;
+  onUpdate: readonly (() => void)[] | null;
+  serialize: ((value: Value) => string) | null;
+  deserialize: ((raw: string) => Value) | null;
 }
 
 export interface KeyDef<Type extends AspenType, Value> {
@@ -53,7 +53,7 @@ type KeyNamesOf<Tree> = {
   [Name in keyof Tree]: Tree[Name] extends AnyKey ? Name : never;
 }[keyof Tree];
 
-type FieldNamesOf<Tree> = Exclude<keyof Tree, KeyNamesOf<Tree> | "$">;
+type FieldNamesOf<Tree> = Exclude<keyof Tree, KeyNamesOf<Tree> | "exec">;
 
 type KeysOf<Tree> = { [Name in KeyNamesOf<Tree>]: Tree[Name] & AnyKey };
 
@@ -65,4 +65,4 @@ export type Live<Tree> = {
   readonly [Name in FieldNamesOf<Tree>]: Tree[Name];
 } & {
   readonly [Name in KeyNamesOf<Tree>]: KeyValue<KeysOf<Tree>[Name]>;
-} & { readonly $: Pick<Tree, KeyNamesOf<Tree>> };
+} & { readonly exec: Pick<Tree, KeyNamesOf<Tree>> };

@@ -32,7 +32,10 @@ export class AspenKey<
 > {
   readonly definition: KeyDef<Type, Value>;
   private binding: Binding | null;
-  private dynamicCallbacks: Map<number, (() => void)[]> = new Map<number, (() => void)[]>();
+  private dynamicCallbacks: Map<number, (() => void)[]> = new Map<
+    number,
+    (() => void)[]
+  >();
 
   constructor(options: KeyOptions<Type, Value>) {
     this.definition = {
@@ -70,8 +73,7 @@ export class AspenKey<
       deserializeForType === undefined
     ) {
       throw new Error(
-        `[Aspen] Unknown type for key "${name}". ` +
-          "Valid types: String, Number, Boolean, Array, Object",
+        `[Aspen] Unknown type for key "${name}" Valid types: String, Number, Boolean, Array, Object`,
       );
     }
 
@@ -108,22 +110,17 @@ export class AspenKey<
       for (const callback of callbacks as unknown[]) {
         if (typeof callback !== "function") {
           throw new Error(
-            `[Aspen] onUpdate for "${name}" contains a non-function. ` +
-              "Pass render functions by reference (renderTheme), " +
-              "not their result (renderTheme()).",
+            `[Aspen] onUpdate for "${name}" contains a non-function. Pass render functions by reference (renderTheme), not their result (renderTheme()).`,
           );
         }
         if (callback.name === "") {
           throw new Error(
-            `[Aspen] onUpdate for "${name}" contains an anonymous function. ` +
-              "Declare a named render function and reference it by name.",
+            `[Aspen] onUpdate for "${name}" contains an anonymous function. Declare a named render function and reference it by name.`,
           );
         }
         if (callback.length > 0) {
           throw new Error(
-            `[Aspen] onUpdate function "${callback.name}" for "${name}" ` +
-              "declares parameters. Render functions take no arguments " +
-              "and read state via tree properties.",
+            `[Aspen] onUpdate function "${callback.name}" for "${name} declares parameters. Render functions take no arguments and read state via tree properties.`,
           );
         }
         if (seen.has(callback) === true) {
@@ -186,8 +183,7 @@ export class AspenKey<
 
     if (this.accepts(value) === false) {
       throw new Error(
-        `[Aspen] Value ${JSON.stringify(value)} is not allowed for "${binding.name}". ` +
-          `Allowed: ${JSON.stringify(this.definition.allowed)}`,
+        `[Aspen] Value ${JSON.stringify(value)} is not allowed for "${binding.name}". Allowed: ${JSON.stringify(this.definition.allowed)}`,
       );
     }
 
@@ -210,7 +206,11 @@ export class AspenKey<
     return this.update(this.read() === false);
   }
 
-  addOnUpdate(callback: unknown, syncWave = 0): () => void {
+  addOnUpdate(callback: unknown, syncWave: number | null = null): () => void {
+    let resolvedWave = 0;
+    if (syncWave !== null) {
+      resolvedWave = syncWave;
+    }
     if (typeof callback !== "function") {
       throw new Error("[Aspen] addOnUpdate callback must be a named function.");
     }
@@ -223,23 +223,36 @@ export class AspenKey<
         `[Aspen] addOnUpdate callback "${func.name}" declares parameters. Render functions take no arguments and read state via tree properties.`,
       );
     }
-    if (Number.isInteger(syncWave) === false || syncWave < 0 || syncWave > 255) {
-      throw new Error(`[Aspen] syncWave must be 0-255, got ${syncWave}`);
+    if (
+      Number.isInteger(resolvedWave) === false ||
+      resolvedWave < 0 ||
+      resolvedWave > 255
+    ) {
+      throw new Error(`[Aspen] syncWave must be 0-255, got ${resolvedWave}`);
     }
     const typed = callback as () => void;
-    const existing = this.dynamicCallbacks.get(syncWave);
+    const existing = this.dynamicCallbacks.get(resolvedWave);
     if (existing !== undefined) {
       existing.push(typed);
     } else {
       const sorted = new Map<number, (() => void)[]>();
-      const keys = [...this.dynamicCallbacks.keys(), syncWave].sort((a, b) => a - b);
-      for (const key of keys) {
-        sorted.set(key, key === syncWave ? [typed] : (this.dynamicCallbacks.get(key) as (() => void)[]));
+      for (const waveIndex of [
+        ...this.dynamicCallbacks.keys(),
+        resolvedWave,
+      ].sort((waveA, waveB) => waveA - waveB)) {
+        if (waveIndex === resolvedWave) {
+          sorted.set(waveIndex, [typed]);
+        } else {
+          sorted.set(
+            waveIndex,
+            this.dynamicCallbacks.get(waveIndex) as (() => void)[],
+          );
+        }
       }
       this.dynamicCallbacks = sorted;
     }
     return () => {
-      const list = this.dynamicCallbacks.get(syncWave);
+      const list = this.dynamicCallbacks.get(resolvedWave);
       if (list === undefined) return;
       const idx = list.indexOf(typed);
       if (idx !== -1) list.splice(idx, 1);

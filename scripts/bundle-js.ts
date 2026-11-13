@@ -1,6 +1,8 @@
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { build } from "esbuild";
+
+mkdirSync("dist", { recursive: true });
 
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 const result = await build({
