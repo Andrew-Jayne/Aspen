@@ -13,16 +13,24 @@ class TodoTree extends StateTree {
     type: Array,
     persistent: true,
     default: [] as Todo[],
+    bootMirror: null,
+    allowed: null,
     aliases: ["todo:items"],
     onUpdate: [renderList, renderCounter],
+    serialize: null,
+    deserialize: null,
   });
 
   filter = new AspenKey({
     type: String,
     persistent: true,
     default: "all",
+    bootMirror: null,
     allowed: ["all", "open", "done"],
+    aliases: null,
     onUpdate: [renderList, renderFilterTabs],
+    serialize: null,
+    deserialize: null,
   });
 
   darkMode = new AspenKey({
@@ -30,20 +38,38 @@ class TodoTree extends StateTree {
     persistent: true,
     bootMirror: true,
     default: false,
-    onUpdate: [renderTheme],
+    allowed: null,
+    aliases: null,
+    onUpdate: null,
+    serialize: null,
+    deserialize: null,
   });
 
   draft = new AspenKey({
     type: String,
     persistent: false,
     default: "",
-    onUpdate: [renderDraft],
+    bootMirror: null,
+    allowed: null,
+    aliases: null,
+    onUpdate: null,
+    serialize: null,
+    deserialize: null,
   });
 }
 
 const state = await TodoTree.create("https://api.example.com/state");
 await state.validateStorage();
+
+const unsubscribeTheme = state.exec.darkMode.addOnUpdate(renderTheme);
+const unsubscribeDraft = state.exec.draft.addOnUpdate(renderDraft);
+
 state.bootstrap();
+
+export function teardown(): void {
+  unsubscribeTheme();
+  unsubscribeDraft();
+}
 
 function renderTheme(): void {
   switch (state.darkMode) {
@@ -96,11 +122,11 @@ function renderDraft(): void {
 
 async function addTodo(): Promise<void> {
   if (state.draft === "") return;
-  await state.$.todos.update([
+  await state.exec.todos.update([
     ...state.todos,
     { id: crypto.randomUUID(), title: state.draft, done: false },
   ]);
-  await state.$.draft.update("");
+  await state.exec.draft.update("");
 }
 
 async function toggleTodo(event: MouseEvent): Promise<void> {
@@ -114,21 +140,21 @@ async function toggleTodo(event: MouseEvent): Promise<void> {
       todos.push(todo);
     }
   }
-  await state.$.todos.update(todos);
+  await state.exec.todos.update(todos);
 }
 
 async function captureDraft(): Promise<void> {
-  await state.$.draft.update(DRAFT_INPUT.value);
+  await state.exec.draft.update(DRAFT_INPUT.value);
 }
 
 async function selectFilter(event: MouseEvent): Promise<void> {
   const filter = (event.target as HTMLElement).getAttribute("data-filter");
   if (filter === null) return;
-  await state.$.filter.update(filter);
+  await state.exec.filter.update(filter);
 }
 
 async function toggleTheme(): Promise<void> {
-  await state.$.darkMode.toggle();
+  await state.exec.darkMode.toggle();
 }
 
 (document.querySelector("#todo-add") as HTMLButtonElement).addEventListener(
