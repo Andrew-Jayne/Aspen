@@ -56,6 +56,10 @@ export class AspenKey<
     return this.bound().storageKey;
   }
 
+  get value(): Value | WidenOf<Type> {
+    return this.read();
+  }
+
   bind(
     name: string,
     namespace: string,
@@ -206,21 +210,24 @@ export class AspenKey<
     return this.update(this.read() === false);
   }
 
-  addOnUpdate(callback: unknown, syncWave: number | null = null): () => void {
+  listen(
+    callback: unknown,
+    syncWave: number | null = null,
+  ): (() => void) & Disposable {
     let resolvedWave = 0;
     if (syncWave !== null) {
       resolvedWave = syncWave;
     }
     if (typeof callback !== "function") {
-      throw new Error("[Aspen] addOnUpdate callback must be a named function.");
+      throw new Error("[Aspen] listen callback must be a named function.");
     }
     const func = callback as (...args: unknown[]) => unknown;
     if (func.name === "") {
-      throw new Error("[Aspen] addOnUpdate callback must be a named function.");
+      throw new Error("[Aspen] listen callback must be a named function.");
     }
     if (func.length > 0) {
       throw new Error(
-        `[Aspen] addOnUpdate callback "${func.name}" declares parameters. Render functions take no arguments and read state via tree properties.`,
+        `[Aspen] listen callback "${func.name}" declares parameters. Render functions take no arguments and read state via tree properties.`,
       );
     }
     if (
@@ -251,12 +258,14 @@ export class AspenKey<
       }
       this.dynamicCallbacks = sorted;
     }
-    return () => {
+    const unlisten = (): void => {
       const list = this.dynamicCallbacks.get(resolvedWave);
       if (list === undefined) return;
       const idx = list.indexOf(typed);
       if (idx !== -1) list.splice(idx, 1);
     };
+    unlisten[Symbol.dispose] = unlisten;
+    return unlisten;
   }
 
   notify(): void {

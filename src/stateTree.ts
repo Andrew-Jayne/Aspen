@@ -7,7 +7,6 @@ const DATABASE_NAME = "aspen";
 export abstract class StateTree {
   abstract readonly namespace: string;
   readonly persistenceUrl: string | null;
-  readonly exec: Readonly<Record<string, AspenKey>> = {};
 
   private static storage: IndexedDBBackend | null = null;
   private readonly ephemeralStore: Map<string, unknown> = new Map();
@@ -27,7 +26,6 @@ export abstract class StateTree {
     }
 
     const tree = new this(persistenceUrl);
-    const keyMap: Record<string, AspenKey> = {};
 
     for (const [name, field] of Object.entries(tree) as [string, unknown][]) {
       if (field instanceof AspenKey === false) continue;
@@ -44,20 +42,13 @@ export abstract class StateTree {
         StateTree.requireStorage(),
         tree.ephemeralStore,
       );
-      keyMap[name] = key;
       Object.defineProperty(tree, name, {
-        get: key.read.bind(key),
+        value: key,
         enumerable: true,
         configurable: false,
+        writable: false,
       });
     }
-
-    Object.defineProperty(tree, "exec", {
-      value: Object.freeze(keyMap),
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    });
 
     return tree as unknown as Live<Tree>;
   }
@@ -71,8 +62,18 @@ export abstract class StateTree {
     return StateTree.storage;
   }
 
+  private ownKeys(): AspenKey[] {
+    const result: AspenKey[] = [];
+    for (const value of Object.values(this)) {
+      if (value instanceof AspenKey === true) {
+        result.push(value as AspenKey);
+      }
+    }
+    return result;
+  }
+
   bootstrap(): void {
-    for (const key of Object.values(this.exec)) {
+    for (const key of this.ownKeys()) {
       key.notify();
     }
   }
@@ -102,7 +103,7 @@ export abstract class StateTree {
       }
     }
 
-    for (const key of Object.values(this.exec)) {
+    for (const key of this.ownKeys()) {
       if (key.definition.persistent === true) {
         validStorageKeys.add(key.storageKey);
 
@@ -146,7 +147,10 @@ export abstract class StateTree {
       writes.push(storage.removeItem(storedKey));
     }
 
-    for (const [name, key] of Object.entries(this.exec)) {
+    for (const [name, value] of Object.entries(this) as [string, unknown][]) {
+      if (value instanceof AspenKey === false) continue;
+      const key = value as AspenKey;
+
       if (key.definition.persistent === false) continue;
 
       const raw = storage.getItem(key.storageKey);
@@ -198,7 +202,7 @@ export abstract class StateTree {
 
   exportPersistent(): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const key of Object.values(this.exec)) {
+    for (const key of this.ownKeys()) {
       if (key.definition.persistent === true) {
         const raw = StateTree.requireStorage().getItem(key.storageKey);
         if (raw !== null) {
@@ -214,9 +218,10 @@ export abstract class StateTree {
     for (const [storageKey, raw] of Object.entries(data)) {
       if (storageKey.startsWith(this.namespace) === false) continue;
 
-      const name = storageKey.slice(this.namespace.length);
-      if (Object.hasOwn(this.exec, name) === false) continue;
-      const key = this.exec[name] as AspenKey;
+      const key = (this as unknown as Record<string, unknown>)[
+        storageKey.slice(this.namespace.length)
+      ];
+      if (key instanceof AspenKey === false) continue;
       if (key.definition.persistent === false) continue;
 
       writes.push(key.update(key.deserialize(raw) as ValueOf<AspenType>));
