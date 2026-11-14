@@ -58,21 +58,28 @@ class TodoTree extends StateTree {
   });
 }
 
+function setupComponent(listeners: (() => void)[]): Disposable {
+  return {
+    [Symbol.dispose](): void {
+      for (const unlisten of listeners) {
+        unlisten();
+      }
+    },
+  };
+}
+
 const state = await TodoTree.create("https://api.example.com/state");
 await state.validateStorage();
 
-const unsubscribeTheme = state.exec.darkMode.addOnUpdate(renderTheme);
-const unsubscribeDraft = state.exec.draft.addOnUpdate(renderDraft);
+export const themeControls = setupComponent([
+  state.darkMode.listen(renderTheme),
+  state.draft.listen(renderDraft),
+]);
 
 state.bootstrap();
 
-export function teardown(): void {
-  unsubscribeTheme();
-  unsubscribeDraft();
-}
-
 function renderTheme(): void {
-  switch (state.darkMode) {
+  switch (state.darkMode.value) {
     case true:
       document.documentElement.setAttribute("data-theme", "dark");
       break;
@@ -83,14 +90,14 @@ function renderTheme(): void {
 }
 
 function matchesFilter(todo: Todo): boolean {
-  if (state.filter === "open") return todo.done === false;
-  if (state.filter === "done") return todo.done === true;
+  if (state.filter.value === "open") return todo.done === false;
+  if (state.filter.value === "done") return todo.done === true;
   return true;
 }
 
 function renderList(): void {
   LIST.replaceChildren();
-  for (const todo of state.todos.filter(matchesFilter)) {
+  for (const todo of state.todos.value.filter(matchesFilter)) {
     const item = document.createElement("li");
     item.textContent = todo.title;
     item.setAttribute("data-id", todo.id);
@@ -100,7 +107,7 @@ function renderList(): void {
 }
 
 function renderCounter(): void {
-  COUNTER.textContent = `${state.todos.filter(isOpen).length} left`;
+  COUNTER.textContent = `${state.todos.value.filter(isOpen).length} left`;
 }
 
 function isOpen(todo: Todo): boolean {
@@ -111,50 +118,50 @@ function renderFilterTabs(): void {
   for (const tab of document.querySelectorAll<HTMLElement>("[data-filter]")) {
     tab.classList.toggle(
       "active",
-      tab.getAttribute("data-filter") === state.filter,
+      tab.getAttribute("data-filter") === state.filter.value,
     );
   }
 }
 
 function renderDraft(): void {
-  DRAFT_INPUT.value = state.draft;
+  DRAFT_INPUT.value = state.draft.value;
 }
 
 async function addTodo(): Promise<void> {
-  if (state.draft === "") return;
-  await state.exec.todos.update([
-    ...state.todos,
-    { id: crypto.randomUUID(), title: state.draft, done: false },
+  if (state.draft.value === "") return;
+  await state.todos.update([
+    ...state.todos.value,
+    { id: crypto.randomUUID(), title: state.draft.value, done: false },
   ]);
-  await state.exec.draft.update("");
+  await state.draft.update("");
 }
 
 async function toggleTodo(event: MouseEvent): Promise<void> {
   const item = (event.target as HTMLElement).closest("li");
   if (item === null) return;
   const todos: Todo[] = [];
-  for (const todo of state.todos) {
+  for (const todo of state.todos.value) {
     if (todo.id === item.getAttribute("data-id")) {
       todos.push({ ...todo, done: todo.done === false });
     } else {
       todos.push(todo);
     }
   }
-  await state.exec.todos.update(todos);
+  await state.todos.update(todos);
 }
 
 async function captureDraft(): Promise<void> {
-  await state.exec.draft.update(DRAFT_INPUT.value);
+  await state.draft.update(DRAFT_INPUT.value);
 }
 
 async function selectFilter(event: MouseEvent): Promise<void> {
   const filter = (event.target as HTMLElement).getAttribute("data-filter");
   if (filter === null) return;
-  await state.exec.filter.update(filter);
+  await state.filter.update(filter);
 }
 
 async function toggleTheme(): Promise<void> {
-  await state.exec.darkMode.toggle();
+  await state.darkMode.toggle();
 }
 
 (document.querySelector("#todo-add") as HTMLButtonElement).addEventListener(

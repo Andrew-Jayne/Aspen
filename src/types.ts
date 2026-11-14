@@ -53,16 +53,10 @@ type KeyNamesOf<Tree> = {
   [Name in keyof Tree]: Tree[Name] extends AnyKey ? Name : never;
 }[keyof Tree];
 
-type FieldNamesOf<Tree> = Exclude<keyof Tree, KeyNamesOf<Tree> | "exec">;
-
-type KeysOf<Tree> = { [Name in KeyNamesOf<Tree>]: Tree[Name] & AnyKey };
-
-type KeyValue<Key extends AnyKey> =
-  | Key["definition"]["default"]
-  | WidenOf<Key["definition"]["type"]>;
+type FieldNamesOf<Tree> = Exclude<keyof Tree, KeyNamesOf<Tree>>;
 
 export type Live<Tree> = {
   readonly [Name in FieldNamesOf<Tree>]: Tree[Name];
 } & {
-  readonly [Name in KeyNamesOf<Tree>]: KeyValue<KeysOf<Tree>[Name]>;
-} & { readonly exec: Pick<Tree, KeyNamesOf<Tree>> };
+  readonly [Name in KeyNamesOf<Tree>]: Tree[Name];
+};
