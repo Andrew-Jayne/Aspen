@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Aspen Demo</title>
+    <script>
+      const stored = localStorage.getItem("demo:theme");
+      document.documentElement.dataset.theme = stored === "dark" ? "dark" : "light";
+    </script>
+    <style>
+      :root[data-theme="light"] { --bg: #fff; --fg: #111; --card: #f4f4f4; --accent: #2563eb; }
+      :root[data-theme="dark"]  { --bg: #111; --fg: #f4f4f4; --card: #1e1e1e; --accent: #60a5fa; }
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+      h1 { font-size: 1.4rem; }
+      h2 { font-size: 1rem; margin-top: 2rem; }
+      section { background: var(--card); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+      button { background: var(--accent); color: #fff; border: none; border-radius: 4px; padding: .4rem .9rem; cursor: pointer; font-size: .9rem; }
+      input, textarea { background: var(--bg); color: var(--fg); border: 1px solid #888; border-radius: 4px; padding: .3rem .6rem; font-size: .9rem; width: 100%; margin: .3rem 0; }
+      textarea { height: 4rem; resize: vertical; }
+      ul { margin: .4rem 0; padding-left: 1.2rem; }
+      .row { display: flex; gap: .6rem; align-items: center; }
+      #toast-zone { position: fixed; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: .5rem; }
+      .toast { padding: .6rem 1rem; border-radius: 6px; display: flex; gap: .6rem; align-items: center; font-size: .875rem; }
+      .toast--info  { background: #2563eb; color: #fff; }
+      .toast--warn  { background: #d97706; color: #fff; }
+      .toast--error { background: #dc2626; color: #fff; }
+      .toast button { background: transparent; color: inherit; padding: 0 .2rem; font-size: 1rem; }
+      code { font-family: monospace; background: var(--card); padding: .1rem .3rem; border-radius: 3px; }
+    </style>
+    <script type="module" src="./demo.js"></script>
+  </head>
+  <body>
+    <h1>Aspen Demo</h1>
+    <p>Theme is applied from <code>localStorage</code> before the first <code>await</code> via <code>bootMirror</code>.</p>
+
+    <section>
+      <h2>Theme (bootMirror)</h2>
+      <button type="button" id="theme-btn">Dark mode</button>
+    </section>
+
+    <section>
+      <h2>Counters — persistent vs session</h2>
+      <p>The persistent counter survives a page reload. The session counter resets.</p>
+      <div class="row">
+        <button type="button" id="persist-btn">+1 persistent</button>
+        <span>Count: <strong id="persist-count">0</strong></span>
+      </div>
+      <div class="row" style="margin-top:.5rem">
+        <button type="button" id="session-btn">+1 session</button>
+        <span>Count: <strong id="session-count">0</strong></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Profile (nested Object)</h2>
+      <p>Name: <strong id="profile-name"></strong></p>
+      <p id="profile-bio"></p>
+      <ul id="profile-tags"></ul>
+      <label>Name <input type="text" id="name-input" /></label>
+      <label>Bio <textarea id="bio-input"></textarea></label>
+      <label>Tags (comma-separated) <input type="text" id="tag-input" /></label>
+      <button type="button" id="profile-save">Save profile</button>
+    </section>
+
+    <section>
+      <h2>Notifications (dynamic listen)</h2>
+      <p>A toast mounts via a <code>listen()</code> registered after tree creation.</p>
+      <button type="button" id="notify-btn">Send notification</button>
+    </section>
+
+    <section>
+      <h2>Polling session (using statement)</h2>
+      <p>While the session runs, a listener is held open via <code>using</code> and disposed when the session ends.</p>
+      <div class="row">
+        <button type="button" id="poll-btn">Start polling</button>
+        <span id="poll-status">Idle.</span>
+      </div>
+    </section>
+
+    <div id="toast-zone"></div>
+  </body>
+</html>
