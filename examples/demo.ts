@@ -1,7 +1,11 @@
-import { AspenKey, StateTree } from "../src/index.ts";
+import { AspenKey, keys, StateTree } from "../src/index.ts";
 
 type Profile = { name: string; bio: string; tags: string[] };
-type Notification = { id: string; message: string; level: "info" | "warn" | "error" };
+type Notification = {
+  id: string;
+  message: string;
+  level: "info" | "warn" | "error";
+};
 const EMPTY_NOTIFICATION: Notification = { id: "", message: "", level: "info" };
 
 class DemoTree extends StateTree {
@@ -19,35 +23,19 @@ class DemoTree extends StateTree {
     deserialize: null,
   });
 
-  persistCount = new AspenKey({
-    type: Number,
-    persistent: true,
-    bootMirror: null,
-    default: 0,
-    allowed: null,
-    aliases: null,
-    onUpdate: [renderPersistCount],
-    serialize: null,
-    deserialize: null,
-  });
+  persistCount = keys.make(Number, 0, true, undefined, [renderPersistCount]);
 
-  sessionCount = new AspenKey({
-    type: Number,
-    persistent: false,
-    bootMirror: null,
-    default: 0,
-    allowed: null,
-    aliases: null,
-    onUpdate: [renderSessionCount],
-    serialize: null,
-    deserialize: null,
-  });
+  sessionCount = keys.make(Number, 0, false, undefined, [renderSessionCount]);
 
   profile = new AspenKey({
     type: Object,
     persistent: true,
     bootMirror: null,
-    default: { name: "Ada Lovelace", bio: "Mathematician and writer.", tags: ["math", "computing"] } as Profile,
+    default: {
+      name: "Ada Lovelace",
+      bio: "Mathematician and writer.",
+      tags: ["math", "computing"],
+    } as Profile,
     allowed: null,
     aliases: null,
     onUpdate: [renderProfile],
@@ -72,13 +60,21 @@ const state = await DemoTree.create(null);
 await state.validateStorage();
 
 const THEME_BTN = document.querySelector("#theme-btn") as HTMLButtonElement;
-const PERSIST_COUNT = document.querySelector("#persist-count") as HTMLSpanElement;
-const SESSION_COUNT = document.querySelector("#session-count") as HTMLSpanElement;
+const PERSIST_COUNT = document.querySelector(
+  "#persist-count",
+) as HTMLSpanElement;
+const SESSION_COUNT = document.querySelector(
+  "#session-count",
+) as HTMLSpanElement;
 const PERSIST_BTN = document.querySelector("#persist-btn") as HTMLButtonElement;
 const SESSION_BTN = document.querySelector("#session-btn") as HTMLButtonElement;
 const PROFILE_NAME = document.querySelector("#profile-name") as HTMLSpanElement;
-const PROFILE_BIO = document.querySelector("#profile-bio") as HTMLParagraphElement;
-const PROFILE_TAGS = document.querySelector("#profile-tags") as HTMLUListElement;
+const PROFILE_BIO = document.querySelector(
+  "#profile-bio",
+) as HTMLParagraphElement;
+const PROFILE_TAGS = document.querySelector(
+  "#profile-tags",
+) as HTMLUListElement;
 const NAME_INPUT = document.querySelector("#name-input") as HTMLInputElement;
 const BIO_INPUT = document.querySelector("#bio-input") as HTMLTextAreaElement;
 const TAG_INPUT = document.querySelector("#tag-input") as HTMLInputElement;
@@ -88,8 +84,9 @@ const POLL_BTN = document.querySelector("#poll-btn") as HTMLButtonElement;
 const POLL_STATUS = document.querySelector("#poll-status") as HTMLSpanElement;
 
 function renderTheme(): void {
-  document.documentElement.dataset.theme = state.theme.value;
-  THEME_BTN.textContent = state.theme.value === "dark" ? "Light mode" : "Dark mode";
+  document.documentElement.dataset["theme"] = state.theme.value;
+  THEME_BTN.textContent =
+    state.theme.value === "dark" ? "Light mode" : "Dark mode";
 }
 
 function renderPersistCount(): void {
@@ -130,8 +127,15 @@ SESSION_BTN.addEventListener("click", async () => {
 });
 
 async function saveProfile(): Promise<void> {
-  const tags = TAG_INPUT.value.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
-  await state.profile.update({ name: NAME_INPUT.value, bio: BIO_INPUT.value, tags });
+  const tags = TAG_INPUT.value
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  await state.profile.update({
+    name: NAME_INPUT.value,
+    bio: BIO_INPUT.value,
+    tags,
+  });
 }
 
 document.querySelector("#profile-save")!.addEventListener("click", saveProfile);
@@ -139,7 +143,7 @@ document.querySelector("#profile-save")!.addEventListener("click", saveProfile);
 function buildToast(notification: Notification): HTMLDivElement {
   const toast = document.createElement("div");
   toast.className = `toast toast--${notification.level}`;
-  toast.dataset.id = notification.id;
+  toast.dataset["id"] = notification.id;
   toast.textContent = notification.message;
   const dismiss = document.createElement("button");
   dismiss.type = "button";
