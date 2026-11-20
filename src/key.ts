@@ -4,8 +4,7 @@ import type { IndexedDBBackend } from "./storage.ts";
 import type {AspenType, KeyDef, KeyOptions, ValueOf, WidenOf} from "./types.ts";
 import { validators } from "./validation.ts";
 
-function orNull<Value>(value: Value | null | undefined): Value | null {
-  if (value === undefined) return null;
+function orNull<Value>(value: Value | null = null): Value | null {
   return value;
 }
 
@@ -18,6 +17,16 @@ interface Binding {
   validate: (value: unknown) => boolean;
   serialize: (value: unknown) => string;
   deserialize: (raw: string) => unknown;
+}
+
+interface KeyFactory {
+  make<Type extends AspenType>(
+    type: Type,
+    initial: ValueOf<Type>,
+    persistent?: boolean,
+    allowed?: readonly ValueOf<Type>[],
+    onUpdate?: readonly (() => void)[],
+  ): AspenKey<Type, ValueOf<Type>>;
 }
 
 interface BooleanKey {
@@ -302,3 +311,27 @@ export class AspenKey<
     return this.binding;
   }
 }
+
+class KeyFactoryImpl implements KeyFactory {
+  make<Type extends AspenType>(
+    type: Type,
+    initial: ValueOf<Type>,
+    persistent: boolean = false,
+    allowed: readonly ValueOf<Type>[] | null = null,
+    onUpdate: readonly (() => void)[] | null = null,
+  ): AspenKey<Type, ValueOf<Type>> {
+    return new AspenKey<Type, ValueOf<Type>>({
+      type,
+      persistent,
+      default: initial,
+      bootMirror: null,
+      allowed,
+      aliases: null,
+      onUpdate,
+      serialize: null,
+      deserialize: null,
+    });
+  }
+}
+
+export const keys: KeyFactory = new KeyFactoryImpl();
