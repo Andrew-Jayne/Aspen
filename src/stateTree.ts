@@ -11,7 +11,7 @@ export abstract class StateTree {
   private static storage: IndexedDBBackend | null = null;
   private readonly ephemeralStore: Map<string, unknown> = new Map();
 
-  constructor(persistenceUrl: string | null) {
+  constructor(persistenceUrl: string | null = null) {
     this.persistenceUrl = persistenceUrl;
   }
 
@@ -19,7 +19,7 @@ export abstract class StateTree {
     this: new (
       persistenceUrl: string | null,
     ) => Tree,
-    persistenceUrl: string | null,
+    persistenceUrl: string | null = null,
   ): Promise<Live<Tree>> {
     if (StateTree.storage === null) {
       StateTree.storage = await IndexedDBBackend.open(DATABASE_NAME);
