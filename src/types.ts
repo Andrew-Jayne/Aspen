@@ -23,14 +23,14 @@ export type WidenOf<Type extends AspenType> = Row<Type>["widen"];
 
 export interface KeyOptions<Type extends AspenType, Value> {
   type: Type;
-  persistent: boolean;
+  persistent?: boolean;
   default: Value;
-  bootMirror: boolean | null;
-  allowed: readonly Value[] | null;
-  aliases: readonly string[] | null;
-  onUpdate: readonly (() => void)[] | null;
-  serialize: ((value: Value) => string) | null;
-  deserialize: ((raw: string) => Value) | null;
+  bootMirror?: boolean | null;
+  allowed?: readonly Value[] | null;
+  aliases?: readonly string[] | null;
+  onUpdate?: readonly (() => void)[] | null;
+  serialize?: ((value: Value) => string) | null;
+  deserialize?: ((raw: string) => Value) | null;
 }
 
 export interface KeyDef<Type extends AspenType, Value> {
