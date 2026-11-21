@@ -49,7 +49,7 @@ export class AspenKey<
   constructor(options: KeyOptions<Type, Value>) {
     this.definition = {
       type: options.type,
-      persistent: options.persistent,
+      persistent: options.persistent ?? true,
       default: options.default,
       bootMirror: orNull(options.bootMirror),
       allowed: orNull(options.allowed),
@@ -316,7 +316,7 @@ class KeyFactoryImpl implements KeyFactory {
   make<Type extends AspenType>(
     type: Type,
     initial: ValueOf<Type>,
-    persistent: boolean = false,
+    persistent: boolean = true,
     allowed: readonly ValueOf<Type>[] | null = null,
     onUpdate: readonly (() => void)[] | null = null,
   ): AspenKey<Type, ValueOf<Type>> {
