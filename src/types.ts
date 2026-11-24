@@ -35,7 +35,7 @@ export type TypeFor<Value> = [Value] extends [string]
 
 export interface KeyOptions<Value> {
   type: TypeFor<Value>;
-  persistent?: boolean;
+  persistent?: boolean | null;
   default: Value;
   bootMirror?: boolean | null;
   allowed?: readonly Value[] | null;

@@ -38,9 +38,15 @@ export class AspenKey<Value = unknown> {
   >();
 
   constructor(options: KeyOptions<Value>) {
+    // Keys persist unless the options say otherwise; omitted and null both
+    // mean the default.
+    let persistent = true;
+    if (options.persistent === false) {
+      persistent = false;
+    }
     this.definition = {
       type: options.type,
-      persistent: options.persistent ?? true,
+      persistent,
       default: options.default,
       bootMirror: orNull(options.bootMirror),
       allowed: orNull(options.allowed),
