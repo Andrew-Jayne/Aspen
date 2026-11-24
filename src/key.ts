@@ -1,7 +1,7 @@
 import { deserializers, serializers } from "./seralize.ts";
 import type { IndexedDBBackend } from "./storage.ts";
 // biome-ignore format: preserve formatting -  because the bundler import striper is too dumb to handle multi line
-import type {AspenType, KeyDef, KeyOptions, ValueOf, WidenOf} from "./types.ts";
+import type {AspenType, KeyDef, KeyOptions, TypeFor, ValueOf} from "./types.ts";
 import { validators } from "./validation.ts";
 
 function orNull<Value>(value: Value | null = null): Value | null {
@@ -26,27 +26,18 @@ interface KeyFactory {
     persistent?: boolean,
     allowed?: readonly ValueOf<Type>[],
     onUpdate?: readonly (() => void)[],
-  ): AspenKey<Type, ValueOf<Type>>;
+  ): AspenKey<ValueOf<Type>>;
 }
 
-interface BooleanKey {
-  readonly definition: { readonly type: BooleanConstructor };
-  read(): boolean;
-  update(value: boolean): Promise<void>;
-}
-
-export class AspenKey<
-  Type extends AspenType = AspenType,
-  Value extends ValueOf<Type> = ValueOf<Type>,
-> {
-  readonly definition: KeyDef<Type, Value>;
+export class AspenKey<Value = unknown> {
+  readonly definition: KeyDef<Value>;
   private binding: Binding | null;
   private dynamicCallbacks: Map<number, (() => void)[]> = new Map<
     number,
     (() => void)[]
   >();
 
-  constructor(options: KeyOptions<Type, Value>) {
+  constructor(options: KeyOptions<Value>) {
     this.definition = {
       type: options.type,
       persistent: options.persistent ?? true,
@@ -65,7 +56,7 @@ export class AspenKey<
     return this.bound().storageKey;
   }
 
-  get value(): Value | WidenOf<Type> {
+  get value(): Value {
     return this.read();
   }
 
@@ -77,9 +68,10 @@ export class AspenKey<
   ): void {
     const definition = this.definition;
 
-    const validate = validators.get(definition.type);
-    const serializeForType = serializers.get(definition.type);
-    const deserializeForType = deserializers.get(definition.type);
+    const type = definition.type as AspenType;
+    const validate = validators.get(type);
+    const serializeForType = serializers.get(type);
+    const deserializeForType = deserializers.get(type);
     if (
       validate === undefined ||
       serializeForType === undefined ||
@@ -92,7 +84,7 @@ export class AspenKey<
 
     if (validate(definition.default) === false) {
       throw new Error(
-        `[Aspen] Default value for "${name}" does not match declared type "${definition.type.name}"`,
+        `[Aspen] Default value for "${name}" does not match declared type "${type.name}"`,
       );
     }
 
@@ -168,7 +160,7 @@ export class AspenKey<
     };
   }
 
-  read(): Value | WidenOf<Type> {
+  read(): Value {
     const binding = this.bound();
 
     if (this.definition.persistent === true) {
@@ -185,12 +177,12 @@ export class AspenKey<
     return this.definition.default;
   }
 
-  update(value: Value | WidenOf<Type>): Promise<void> {
+  update(value: Value): Promise<void> {
     const binding = this.bound();
 
     if (binding.validate(value) === false) {
       throw new Error(
-        `[Aspen] Type error on "${binding.name}": expected ${this.definition.type.name}, got ${typeof value}`,
+        `[Aspen] Type error on "${binding.name}": expected ${(this.definition.type as AspenType).name}, got ${typeof value}`,
       );
     }
 
@@ -215,7 +207,7 @@ export class AspenKey<
     return pending;
   }
 
-  toggle(this: BooleanKey): Promise<void> {
+  toggle(this: AspenKey<boolean>): Promise<void> {
     return this.update(this.read() === false);
   }
 
@@ -319,9 +311,9 @@ class KeyFactoryImpl implements KeyFactory {
     persistent: boolean = true,
     allowed: readonly ValueOf<Type>[] | null = null,
     onUpdate: readonly (() => void)[] | null = null,
-  ): AspenKey<Type, ValueOf<Type>> {
-    return new AspenKey<Type, ValueOf<Type>>({
-      type,
+  ): AspenKey<ValueOf<Type>> {
+    return new AspenKey<ValueOf<Type>>({
+      type: type as unknown as TypeFor<ValueOf<Type>>,
       persistent,
       default: initial,
       bootMirror: null,

@@ -7,11 +7,11 @@ export type Json =
   | { [key: string]: Json };
 
 type TypeTable =
-  | { type: StringConstructor; value: string; widen: string }
-  | { type: NumberConstructor; value: number; widen: number }
-  | { type: BooleanConstructor; value: boolean; widen: boolean }
-  | { type: ArrayConstructor; value: Json[]; widen: never }
-  | { type: ObjectConstructor; value: { [key: string]: Json }; widen: never };
+  | { type: StringConstructor; value: string }
+  | { type: NumberConstructor; value: number }
+  | { type: BooleanConstructor; value: boolean }
+  | { type: ArrayConstructor; value: Json[] }
+  | { type: ObjectConstructor; value: { [key: string]: Json } };
 
 export type AspenType = TypeTable["type"];
 
@@ -19,10 +19,22 @@ type Row<Type extends AspenType> = Extract<TypeTable, { type: Type }>;
 
 export type ValueOf<Type extends AspenType> = Row<Type>["value"];
 
-export type WidenOf<Type extends AspenType> = Row<Type>["widen"];
+// The constructor a key must declare for the value type it stores. Wrapped in
+// tuples so unions like "light" | "dark" or true | false map as a whole.
+export type TypeFor<Value> = [Value] extends [string]
+  ? StringConstructor
+  : [Value] extends [number]
+    ? NumberConstructor
+    : [Value] extends [boolean]
+      ? BooleanConstructor
+      : [Value] extends [readonly unknown[]]
+        ? ArrayConstructor
+        : [Value] extends [object]
+          ? ObjectConstructor
+          : never;
 
-export interface KeyOptions<Type extends AspenType, Value> {
-  type: Type;
+export interface KeyOptions<Value> {
+  type: TypeFor<Value>;
   persistent?: boolean;
   default: Value;
   bootMirror?: boolean | null;
@@ -33,8 +45,8 @@ export interface KeyOptions<Type extends AspenType, Value> {
   deserialize?: ((raw: string) => Value) | null;
 }
 
-export interface KeyDef<Type extends AspenType, Value> {
-  type: Type;
+export interface KeyDef<Value> {
+  type: TypeFor<Value>;
   persistent: boolean;
   default: Value;
   bootMirror: boolean | null;

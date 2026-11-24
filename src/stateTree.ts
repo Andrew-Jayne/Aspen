@@ -1,6 +1,6 @@
 import { AspenKey } from "./key.ts";
 import { IndexedDBBackend } from "./storage.ts";
-import type { AspenType, Live, ValueOf } from "./types.ts";
+import type { Live } from "./types.ts";
 
 const DATABASE_NAME = "aspen";
 
@@ -224,7 +224,7 @@ export abstract class StateTree {
       if (key instanceof AspenKey === false) continue;
       if (key.definition.persistent === false) continue;
 
-      writes.push(key.update(key.deserialize(raw) as ValueOf<AspenType>));
+      writes.push(key.update(key.deserialize(raw)));
     }
     await Promise.all(writes);
   }
