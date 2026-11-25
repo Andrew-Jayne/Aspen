@@ -1,59 +1,71 @@
-import { deserializers, serializers } from "./seralize.ts";
-import type { IndexedDBBackend } from "./storage.ts";
-// biome-ignore format: preserve formatting -  because the bundler import striper is too dumb to handle multi line
-import type {AspenType, KeyDef, KeyOptions, TypeFor, ValueOf} from "./types.ts";
+import { encodeMirror, getStorage } from "./storage.ts";
+// biome-ignore format: because the bundler import striper is too dumb to handle multi line
+import type {AspenType, KeyDef, KeyOptions,} from "./types.ts";
 import { validators } from "./validation.ts";
-
-function orNull<Value>(value: Value | null = null): Value | null {
-  return value;
-}
 
 interface Binding {
   name: string;
   storageKey: string;
-  storage: IndexedDBBackend;
   ephemeralStore: Map<string, unknown>;
   onUpdate: readonly (() => void)[];
   validate: (value: unknown) => boolean;
-  serialize: (value: unknown) => string;
-  deserialize: (raw: string) => unknown;
 }
 
-interface KeyFactory {
-  make<Type extends AspenType>(
-    type: Type,
-    initial: ValueOf<Type>,
-    persistent?: boolean,
-    allowed?: readonly ValueOf<Type>[],
-    onUpdate?: readonly (() => void)[],
-  ): AspenKey<ValueOf<Type>>;
+function isolate<ValueType>(value: ValueType): ValueType {
+  if (typeof value === "object" && value !== null) {
+    return structuredClone(value);
+  }
+  return value;
 }
 
-export class AspenKey<Value = unknown> {
-  readonly definition: KeyDef<Value>;
+function typeOfDefault(value: unknown): AspenType {
+  for (const [type, validate] of validators) {
+    if (validate(value) === true) return type;
+  }
+  throw new Error(
+    "[Aspen] Key default must be a string, number, boolean, array or object",
+  );
+}
+
+function requireKey(self: unknown, method: string): void {
+  if (self instanceof AspenKey === false) {
+    throw new Error(
+      `[Aspen] ${method}() was called without its key as \`this\`. Call it as key.${method}(...) or wrap it in a function.`,
+    );
+  }
+}
+
+function orNull<ValueType>(value: ValueType | null = null): ValueType | null {
+  return value;
+}
+
+export class AspenKey<ValueType = unknown> {
+  readonly definition: KeyDef<ValueType>;
   private binding: Binding | null;
   private dynamicCallbacks: Map<number, (() => void)[]> = new Map<
     number,
     (() => void)[]
   >();
 
-  constructor(options: KeyOptions<Value>) {
-    // Keys persist unless the options say otherwise; omitted and null both
-    // mean the default.
+  constructor(
+    declared: unknown extends ValueType
+      ? "AspenKey requires a declared type: new AspenKey<YourType>({ ... })"
+      : KeyOptions<ValueType>
+  ) {
+    const options = declared as KeyOptions<ValueType>;
     let persistent = true;
     if (options.persistent === false) {
       persistent = false;
     }
+    const type = typeOfDefault(options.default);
     this.definition = {
-      type: options.type,
+      type,
       persistent,
       default: options.default,
       bootMirror: orNull(options.bootMirror),
       allowed: orNull(options.allowed),
       aliases: orNull(options.aliases),
       onUpdate: orNull(options.onUpdate),
-      serialize: orNull(options.serialize),
-      deserialize: orNull(options.deserialize),
     };
     this.binding = null;
   }
@@ -62,56 +74,52 @@ export class AspenKey<Value = unknown> {
     return this.bound().storageKey;
   }
 
-  get value(): Value {
-    return this.read();
-  }
-
   bind(
+    this: AspenKey<ValueType>,
     name: string,
     namespace: string,
-    storage: IndexedDBBackend,
     ephemeralStore: Map<string, unknown>,
   ): void {
-    const definition = this.definition;
-
-    const type = definition.type as AspenType;
+    requireKey(this, "bind");
+    const type = this.definition.type;
     const validate = validators.get(type);
-    const serializeForType = serializers.get(type);
-    const deserializeForType = deserializers.get(type);
-    if (
-      validate === undefined ||
-      serializeForType === undefined ||
-      deserializeForType === undefined
-    ) {
+    if (validate === undefined) {
       throw new Error(
         `[Aspen] Unknown type for key "${name}" Valid types: String, Number, Boolean, Array, Object`,
       );
     }
 
-    if (validate(definition.default) === false) {
-      throw new Error(
-        `[Aspen] Default value for "${name}" does not match declared type "${type.name}"`,
-      );
+    if (this.definition.allowed !== null) {
+      for (const entry of this.definition.allowed) {
+        if (validate(entry) === false) {
+          throw new Error(
+            `[Aspen] Allowed value ${JSON.stringify(entry)} for "${name}" is not of the same type (${type.name}) as its default`,
+          );
+        }
+      }
     }
 
     if (
-      definition.allowed !== null &&
-      definition.allowed.includes(definition.default) === false
+      this.definition.allowed !== null &&
+      this.definition.allowed.includes(this.definition.default) === false
     ) {
       throw new Error(
         `[Aspen] Default value for "${name}" is not in the allowed list`,
       );
     }
 
-    if (definition.bootMirror === true && definition.persistent === false) {
+    if (
+      this.definition.bootMirror === true &&
+      this.definition.persistent === false
+    ) {
       throw new Error(
         `[Aspen] bootMirror on "${name}" requires persistent: true`,
       );
     }
 
     let onUpdate: readonly (() => void)[] = [];
-    if (definition.onUpdate !== null) {
-      const callbacks = definition.onUpdate as unknown;
+    if (this.definition.onUpdate !== null) {
+      const callbacks = this.definition.onUpdate as unknown;
       if (Array.isArray(callbacks) === false) {
         throw new Error(
           `[Aspen] onUpdate for "${name}" must be an array of functions`,
@@ -144,67 +152,54 @@ export class AspenKey<Value = unknown> {
       onUpdate = Object.freeze([...callbacks]) as readonly (() => void)[];
     }
 
-    let serialize = serializeForType;
-    if (definition.serialize !== null) {
-      serialize = definition.serialize as (value: unknown) => string;
-    }
-
-    let deserialize = deserializeForType;
-    if (definition.deserialize !== null) {
-      deserialize = definition.deserialize;
-    }
-
     this.binding = {
       name,
       storageKey: namespace + name,
-      storage,
       ephemeralStore,
       onUpdate,
       validate,
-      serialize,
-      deserialize,
     };
   }
 
-  read(): Value {
+  get value(): ValueType {
     const binding = this.bound();
 
     if (this.definition.persistent === true) {
-      const raw = binding.storage.getItem(binding.storageKey);
-      if (raw !== null) {
-        return binding.deserialize(raw) as Value;
+      if (getStorage().hasItem(binding.storageKey) === true) {
+        return isolate(getStorage().getItem(binding.storageKey)) as ValueType;
       }
       return this.definition.default;
     }
 
     if (binding.ephemeralStore.has(binding.name) === true) {
-      return binding.ephemeralStore.get(binding.name) as Value;
+      return binding.ephemeralStore.get(binding.name) as ValueType;
     }
     return this.definition.default;
   }
 
-  update(value: Value): Promise<void> {
+  update(this: AspenKey<ValueType>, value: ValueType): Promise<void> {
+    requireKey(this, "update");
     const binding = this.bound();
 
     if (binding.validate(value) === false) {
       throw new Error(
-        `[Aspen] Type error on "${binding.name}": expected ${(this.definition.type as AspenType).name}, got ${typeof value}`,
+        `[Aspen] Type error on "${binding.name}": expected ${this.definition.type.name}, got ${typeof value}`,
       );
     }
 
     if (this.accepts(value) === false) {
       throw new Error(
-        `[Aspen] Value ${JSON.stringify(value)} is not allowed for "${binding.name}". Allowed: ${JSON.stringify(this.definition.allowed)}`,
+        `[Aspen] ValueType ${JSON.stringify(value)} is not allowed for "${binding.name}". Allowed: ${JSON.stringify(this.definition.allowed)}`,
       );
     }
 
     let pending: Promise<void> = Promise.resolve();
     if (this.definition.persistent === true) {
-      const raw = binding.serialize(value);
+      const stored = isolate(value);
       if (this.definition.bootMirror === true) {
-        localStorage.setItem(binding.storageKey, raw);
+        localStorage.setItem(binding.storageKey, encodeMirror(stored));
       }
-      pending = binding.storage.setItem(binding.storageKey, raw);
+      pending = getStorage().setItem(binding.storageKey, stored);
     } else {
       binding.ephemeralStore.set(binding.name, value);
     }
@@ -214,13 +209,21 @@ export class AspenKey<Value = unknown> {
   }
 
   toggle(this: AspenKey<boolean>): Promise<void> {
-    return this.update(this.read() === false);
+    requireKey(this, "toggle");
+    if (this.definition.type !== Boolean) {
+      throw new Error(
+        `[Aspen] toggle() requires a boolean key; "${this.storageKey}" is ${this.definition.type.name}`,
+      );
+    }
+    return this.update(this.value === false);
   }
 
   listen(
+    this: AspenKey<ValueType>,
     callback: unknown,
     syncWave: number | null = null,
   ): (() => void) & Disposable {
+    requireKey(this, "listen");
     let resolvedWave = 0;
     if (syncWave !== null) {
       resolvedWave = syncWave;
@@ -275,7 +278,8 @@ export class AspenKey<Value = unknown> {
     return unlisten;
   }
 
-  notify(): void {
+  notify(this: AspenKey<ValueType>): void {
+    requireKey(this, "notify");
     for (const fn of this.bound().onUpdate) {
       fn();
     }
@@ -286,21 +290,14 @@ export class AspenKey<Value = unknown> {
     }
   }
 
-  accepts(value: unknown): boolean {
+  accepts(this: AspenKey<ValueType>, value: unknown): boolean {
+    requireKey(this, "accepts");
     if (this.bound().validate(value) === false) return false;
     if (this.definition.allowed === null) return true;
     return (this.definition.allowed as readonly unknown[]).includes(value);
   }
 
-  serialize(value: unknown): string {
-    return this.bound().serialize(value);
-  }
-
-  deserialize(raw: string): unknown {
-    return this.bound().deserialize(raw);
-  }
-
-  private bound(): Binding {
+  private bound(this: AspenKey<ValueType>): Binding {
     if (this.binding === null) {
       throw new Error(
         "[Aspen] Key is not bound to a tree. Build the tree with create().",
@@ -309,27 +306,3 @@ export class AspenKey<Value = unknown> {
     return this.binding;
   }
 }
-
-class KeyFactoryImpl implements KeyFactory {
-  make<Type extends AspenType>(
-    type: Type,
-    initial: ValueOf<Type>,
-    persistent: boolean = true,
-    allowed: readonly ValueOf<Type>[] | null = null,
-    onUpdate: readonly (() => void)[] | null = null,
-  ): AspenKey<ValueOf<Type>> {
-    return new AspenKey<ValueOf<Type>>({
-      type: type as unknown as TypeFor<ValueOf<Type>>,
-      persistent,
-      default: initial,
-      bootMirror: null,
-      allowed,
-      aliases: null,
-      onUpdate,
-      serialize: null,
-      deserialize: null,
-    });
-  }
-}
-
-export const keys: KeyFactory = new KeyFactoryImpl();

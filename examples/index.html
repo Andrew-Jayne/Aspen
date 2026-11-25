@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <title>Aspen Demo</title>
     <script>
+      // bootMirror stores strings raw (other types as JSON).
       const stored = localStorage.getItem("demo:theme");
       document.documentElement.dataset.theme = stored === "dark" ? "dark" : "light";
     </script>

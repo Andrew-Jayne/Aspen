@@ -1,17 +1,68 @@
 import { AspenKey } from "./key.ts";
-import { IndexedDBBackend } from "./storage.ts";
+import {
+  decodeMirror,
+  encodeMirror,
+  getStorage,
+  openStorage,
+} from "./storage.ts";
 import type { Live } from "./types.ts";
 
-const DATABASE_NAME = "aspen";
+function requireTree(self: unknown, method: string): void {
+  if (self instanceof StateTree === false) {
+    throw new Error(
+      `[Aspen] ${method}() was called without its tree as \`this\`. Call it as tree.${method}(...) or wrap it in a function.`,
+    );
+  }
+}
+
+type TreeSelf = Pick<StateTree, keyof StateTree>;
+
+const keyCache = new WeakMap<object, AspenKey[]>();
+
+function ownKeysOf(tree: TreeSelf): AspenKey[] {
+  let keys = keyCache.get(tree);
+  if (keys === undefined) {
+    const found: AspenKey[] = [];
+    for (const value of Object.values(tree) as unknown[]) {
+      if (value instanceof AspenKey) found.push(value);
+    }
+    keyCache.set(tree, found);
+    return found;
+  }
+  return keys;
+}
+
+function resolvePersistenceUrl(
+  configured: string | null,
+  urlOverride: string | null,
+): string {
+  let targetUrl: string | null = configured;
+  if (urlOverride !== null) {
+    targetUrl = urlOverride;
+  }
+  if (targetUrl === null) {
+    throw new Error(
+      "[Aspen] No persistence URL configured. Set persistenceUrl on the tree or pass one as an argument.",
+    );
+  }
+  return targetUrl;
+}
+
+let creating = false;
 
 export abstract class StateTree {
   abstract readonly namespace: string;
   readonly persistenceUrl: string | null;
 
-  private static storage: IndexedDBBackend | null = null;
   private readonly ephemeralStore: Map<string, unknown> = new Map();
 
   constructor(persistenceUrl: string | null = null) {
+    if (creating === false) {
+      throw new Error(
+        `[Aspen] ${new.target.name} cannot be built with new. Use await ${new.target.name}.create() so keys are bound and storage is open.`,
+      );
+    }
+    creating = false;
     this.persistenceUrl = persistenceUrl;
   }
 
@@ -21,11 +72,15 @@ export abstract class StateTree {
     ) => Tree,
     persistenceUrl: string | null = null,
   ): Promise<Live<Tree>> {
-    if (StateTree.storage === null) {
-      StateTree.storage = await IndexedDBBackend.open(DATABASE_NAME);
-    }
+    await openStorage();
 
-    const tree = new this(persistenceUrl);
+    creating = true;
+    let tree: Tree;
+    try {
+      tree = new this(persistenceUrl);
+    } finally {
+      creating = false;
+    }
 
     for (const [name, field] of Object.entries(tree) as [string, unknown][]) {
       if (field instanceof AspenKey === false) continue;
@@ -36,12 +91,7 @@ export abstract class StateTree {
       }
 
       const key = field as AspenKey;
-      key.bind(
-        name,
-        tree.namespace,
-        StateTree.requireStorage(),
-        tree.ephemeralStore,
-      );
+      key.bind(name, tree.namespace, tree.ephemeralStore);
       Object.defineProperty(tree, name, {
         value: key,
         enumerable: true,
@@ -53,33 +103,16 @@ export abstract class StateTree {
     return tree as unknown as Live<Tree>;
   }
 
-  private static requireStorage(): IndexedDBBackend {
-    if (StateTree.storage === null) {
-      throw new Error(
-        "[Aspen] Storage is not open. Build the tree with create().",
-      );
-    }
-    return StateTree.storage;
-  }
-
-  private ownKeys(): AspenKey[] {
-    const result: AspenKey[] = [];
-    for (const value of Object.values(this)) {
-      if (value instanceof AspenKey === true) {
-        result.push(value as AspenKey);
-      }
-    }
-    return result;
-  }
-
-  bootstrap(): void {
-    for (const key of this.ownKeys()) {
+  bootstrap(this: TreeSelf): void {
+    requireTree(this, "bootstrap");
+    for (const key of ownKeysOf(this)) {
       key.notify();
     }
   }
 
-  async validateStorage(): Promise<void> {
-    const storage = StateTree.requireStorage();
+  async validateStorage(this: TreeSelf): Promise<void> {
+    requireTree(this, "validateStorage");
+    const storage = getStorage();
     const writes: Promise<void>[] = [];
     const validStorageKeys = new Set<string>();
     const mirrorKeys = new Set<string>();
@@ -93,17 +126,30 @@ export abstract class StateTree {
       }
     }
 
+    const keysByStorageKey = new Map<string, AspenKey>();
+    for (const key of ownKeysOf(this)) {
+      keysByStorageKey.set(key.storageKey, key);
+    }
+
     for (const legacyKey of legacyKeys) {
       const raw = localStorage.getItem(legacyKey);
-      if (raw !== null && storage.getItem(legacyKey) === null) {
-        writes.push(storage.setItem(legacyKey, raw));
+      const owner = keysByStorageKey.get(legacyKey);
+      if (
+        raw !== null &&
+        owner !== undefined &&
+        owner.definition.persistent === true &&
+        storage.hasItem(legacyKey) === false
+      ) {
+        const value = decodeMirror(raw, owner.definition.type);
+        if (value === undefined) continue;
+        writes.push(storage.setItem(legacyKey, value));
         console.info(
           `[Aspen] Moved "${legacyKey}" from localStorage to IndexedDB`,
         );
       }
     }
 
-    for (const key of this.ownKeys()) {
+    for (const key of ownKeysOf(this)) {
       if (key.definition.persistent === true) {
         validStorageKeys.add(key.storageKey);
 
@@ -119,9 +165,9 @@ export abstract class StateTree {
     }
 
     for (const [oldKey, key] of aliasMap) {
-      const oldValue = storage.getItem(oldKey);
-      if (oldValue !== null) {
-        if (storage.getItem(key.storageKey) === null) {
+      if (storage.hasItem(oldKey) === true) {
+        const oldValue = storage.getItem(oldKey);
+        if (storage.hasItem(key.storageKey) === false) {
           writes.push(storage.setItem(key.storageKey, oldValue));
           console.info(`[Aspen] Migrated "${oldKey}" → "${key.storageKey}"`);
         }
@@ -153,35 +199,17 @@ export abstract class StateTree {
 
       if (key.definition.persistent === false) continue;
 
-      const raw = storage.getItem(key.storageKey);
-      if (raw === null) {
-        writes.push(
-          storage.setItem(
-            key.storageKey,
-            key.serialize(key.definition.default),
-          ),
-        );
+      if (storage.hasItem(key.storageKey) === false) {
+        writes.push(storage.setItem(key.storageKey, key.definition.default));
         console.info(`[Aspen] Restored default for missing key: ${name}`);
         continue;
       }
 
-      let intact = true;
-      try {
-        intact = key.accepts(key.deserialize(raw));
-      } catch {
-        intact = false;
-      }
-
-      if (intact === false) {
+      if (key.accepts(storage.getItem(key.storageKey)) === false) {
         console.warn(
           `[Aspen] Invalid stored value for "${name}"; resetting to default`,
         );
-        writes.push(
-          storage.setItem(
-            key.storageKey,
-            key.serialize(key.definition.default),
-          ),
-        );
+        writes.push(storage.setItem(key.storageKey, key.definition.default));
       }
     }
 
@@ -191,31 +219,38 @@ export abstract class StateTree {
       }
     }
     for (const mirrorKey of mirrorKeys) {
-      const raw = storage.getItem(mirrorKey);
-      if (raw !== null) {
-        localStorage.setItem(mirrorKey, raw);
+      if (storage.hasItem(mirrorKey) === true) {
+        localStorage.setItem(
+          mirrorKey,
+          encodeMirror(storage.getItem(mirrorKey)),
+        );
       }
     }
 
     await Promise.all(writes);
   }
 
-  exportPersistent(): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const key of this.ownKeys()) {
+  exportPersistent(this: TreeSelf): Record<string, unknown> {
+    requireTree(this, "exportPersistent");
+    const out: Record<string, unknown> = {};
+    for (const key of ownKeysOf(this)) {
       if (key.definition.persistent === true) {
-        const raw = StateTree.requireStorage().getItem(key.storageKey);
-        if (raw !== null) {
-          out[key.storageKey] = raw;
+        const storage = getStorage();
+        if (storage.hasItem(key.storageKey) === true) {
+          out[key.storageKey] = storage.getItem(key.storageKey);
         }
       }
     }
     return out;
   }
 
-  async importPersistent(data: Record<string, string>): Promise<void> {
+  async importPersistent(
+    this: TreeSelf,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    requireTree(this, "importPersistent");
     const writes: Promise<void>[] = [];
-    for (const [storageKey, raw] of Object.entries(data)) {
+    for (const [storageKey, value] of Object.entries(data)) {
       if (storageKey.startsWith(this.namespace) === false) continue;
 
       const key = (this as unknown as Record<string, unknown>)[
@@ -224,13 +259,17 @@ export abstract class StateTree {
       if (key instanceof AspenKey === false) continue;
       if (key.definition.persistent === false) continue;
 
-      writes.push(key.update(key.deserialize(raw)));
+      writes.push(key.update(value));
     }
     await Promise.all(writes);
   }
 
-  async pushPersistent(urlOverride: string | null = null): Promise<void> {
-    const targetUrl = this.resolvePersistenceUrl(urlOverride);
+  async pushPersistent(
+    this: TreeSelf,
+    urlOverride: string | null = null,
+  ): Promise<void> {
+    requireTree(this, "pushPersistent");
+    const targetUrl = resolvePersistenceUrl(this.persistenceUrl, urlOverride);
     const response = await fetch(targetUrl, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -243,8 +282,12 @@ export abstract class StateTree {
     }
   }
 
-  async pullPersistent(urlOverride: string | null = null): Promise<boolean> {
-    const targetUrl = this.resolvePersistenceUrl(urlOverride);
+  async pullPersistent(
+    this: TreeSelf,
+    urlOverride: string | null = null,
+  ): Promise<boolean> {
+    requireTree(this, "pullPersistent");
+    const targetUrl = resolvePersistenceUrl(this.persistenceUrl, urlOverride);
     const response = await fetch(targetUrl, {
       headers: { Accept: "application/json" },
     });
@@ -257,7 +300,7 @@ export abstract class StateTree {
       );
     }
 
-    const data = (await response.json()) as Record<string, string>;
+    const data = (await response.json()) as Record<string, unknown>;
     const malformedError = new Error(
       `[Aspen] Pull from "${targetUrl}" returned malformed state`,
     );
@@ -267,18 +310,5 @@ export abstract class StateTree {
 
     await this.importPersistent(data);
     return true;
-  }
-
-  private resolvePersistenceUrl(urlOverride: string | null): string {
-    let targetUrl: string | null = this.persistenceUrl;
-    if (urlOverride !== null) {
-      targetUrl = urlOverride;
-    }
-    if (targetUrl === null) {
-      throw new Error(
-        "[Aspen] No persistence URL configured. Set persistenceUrl on the tree or pass one as an argument.",
-      );
-    }
-    return targetUrl;
   }
 }

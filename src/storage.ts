@@ -1,4 +1,8 @@
 const OBJECT_STORE_NAME = "aspen-kv";
+const DATABASE_NAME = "aspen";
+
+let backend: IndexedDBBackend | null = null;
+let opening: Promise<IndexedDBBackend> | null = null;
 
 class RequestSettler<Result> {
   readonly promise: Promise<Result>;
@@ -35,50 +39,99 @@ function createObjectStoreOnUpgrade(event: IDBVersionChangeEvent): void {
   );
 }
 
+export function encodeMirror(value: unknown): string {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+export function decodeMirror(raw: string, type: unknown): unknown {
+  if (type === String) return raw;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 type WriteOperation =
-  | { kind: "put"; key: string; value: string }
+  | { kind: "put"; key: string; value: unknown }
   | { kind: "delete"; key: string };
 
-export class IndexedDBBackend {
-  private readonly database: IDBDatabase;
-  private readonly cache: Map<string, string>;
-  private pendingWrites: Promise<void>;
+function fatal(message: string, cause: unknown): Error {
+  return new Error(`[Aspen] ${message}`, { cause });
+}
 
-  private constructor(database: IDBDatabase, cache: Map<string, string>) {
+class IndexedDBBackend {
+  private readonly database: IDBDatabase;
+  private readonly cache: Map<string, unknown>;
+  private tail: Promise<void>;
+
+  private constructor(database: IDBDatabase, cache: Map<string, unknown>) {
     this.database = database;
     this.cache = cache;
-    this.pendingWrites = Promise.resolve();
+    this.tail = Promise.resolve();
   }
 
   static async open(databaseName: string): Promise<IndexedDBBackend> {
-    const openRequest = indexedDB.open(databaseName, 1);
-    openRequest.onupgradeneeded = createObjectStoreOnUpgrade;
-    const DATABASE = await awaitRequest(openRequest);
-    const store = DATABASE.transaction(
-      OBJECT_STORE_NAME,
-      "readonly",
-    ).objectStore(OBJECT_STORE_NAME);
-    const [keys, values] = await Promise.all([
-      awaitRequest(store.getAllKeys()),
-      awaitRequest(store.getAll()),
-    ]);
-
-    const CACHE = new Map<string, string>();
-    for (const [index, key] of keys.entries()) {
-      CACHE.set(String(key), String(values[index]));
+    if (typeof indexedDB === "undefined") {
+      throw new Error(
+        "[Aspen] IndexedDB is required and not available in this environment.",
+      );
     }
 
-    return new IndexedDBBackend(DATABASE, CACHE);
-  }
-
-  getItem(key: string): string | null {
-    if (this.cache.has(key) === true) {
-      return this.cache.get(key) as string;
+    let database: IDBDatabase;
+    try {
+      const openRequest = indexedDB.open(databaseName, 1);
+      openRequest.onupgradeneeded = createObjectStoreOnUpgrade;
+      database = await awaitRequest(openRequest);
+    } catch (error) {
+      throw fatal("Could not open IndexedDB.", error);
     }
-    return null;
+
+    if (database.objectStoreNames.contains(OBJECT_STORE_NAME) === false) {
+      database.close();
+      throw new Error(
+        `[Aspen] IndexedDB database "${databaseName}" has no "${OBJECT_STORE_NAME}" store. It was not created by Aspen.`,
+      );
+    }
+
+    database.onversionchange = () => {
+      database.close();
+      console.error(
+        "[Aspen] IndexedDB connection closed: the database was upgraded elsewhere. Reload the page.",
+      );
+    };
+
+    try {
+      const store = database
+        .transaction(OBJECT_STORE_NAME, "readonly")
+        .objectStore(OBJECT_STORE_NAME);
+      const [keys, values] = await Promise.all([
+        awaitRequest(store.getAllKeys()),
+        awaitRequest(store.getAll()),
+      ]);
+
+      const CACHE = new Map<string, unknown>();
+      for (const [index, key] of keys.entries()) {
+        CACHE.set(String(key), values[index]);
+      }
+      return new IndexedDBBackend(database, CACHE);
+    } catch (error) {
+      database.close();
+      throw fatal("Could not read IndexedDB.", error);
+    }
   }
 
-  setItem(key: string, value: string): Promise<void> {
+  getItem(key: string): unknown {
+    return this.cache.get(key);
+  }
+
+  hasItem(key: string): boolean {
+    return this.cache.has(key);
+  }
+
+  setItem(key: string, value: unknown): Promise<void> {
+    structuredClone(value);
     this.cache.set(key, value);
     return this.queueWrite({ kind: "put", key, value });
   }
@@ -101,29 +154,73 @@ export class IndexedDBBackend {
   }
 
   flush(): Promise<void> {
-    return this.pendingWrites;
+    return this.tail;
   }
 
   async close(): Promise<void> {
-    await this.pendingWrites;
+    await this.tail;
     this.database.close();
   }
 
   private queueWrite(operation: WriteOperation): Promise<void> {
-    this.pendingWrites = this.pendingWrites.then(async () => {
-      try {
-        const store = this.database
-          .transaction(OBJECT_STORE_NAME, "readwrite")
-          .objectStore(OBJECT_STORE_NAME);
-        if (operation.kind === "put") {
-          await awaitRequest(store.put(operation.value, operation.key));
-        } else {
-          await awaitRequest(store.delete(operation.key));
-        }
-      } catch (error) {
-        console.error("[Aspen] IndexedDB write failed:", error);
+    const result = this.tail.then(() => this.commit(operation));
+    this.tail = result.catch(() => undefined);
+    return result;
+  }
+
+  private commit(operation: WriteOperation): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const transaction = this.database.transaction(
+        OBJECT_STORE_NAME,
+        "readwrite",
+      );
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () =>
+        reject(
+          fatal(
+            `IndexedDB write failed for "${operation.key}".`,
+            transaction.error,
+          ),
+        );
+      transaction.onabort = () =>
+        reject(
+          fatal(
+            `IndexedDB write aborted for "${operation.key}".`,
+            transaction.error,
+          ),
+        );
+      const store = transaction.objectStore(OBJECT_STORE_NAME);
+      if (operation.kind === "put") {
+        store.put(operation.value, operation.key);
+      } else {
+        store.delete(operation.key);
       }
     });
-    return this.pendingWrites;
   }
+}
+
+export async function openStorage(): Promise<void> {
+  if (backend !== null) return;
+  opening ??= IndexedDBBackend.open(DATABASE_NAME);
+  try {
+    backend = await opening;
+  } finally {
+    opening = null;
+  }
+}
+
+export function getStorage(): IndexedDBBackend {
+  if (backend === null) {
+    throw new Error(
+      "[Aspen] Storage is not open. Build the tree with create().",
+    );
+  }
+  return backend;
+}
+
+export async function closeStorage(): Promise<void> {
+  if (backend === null) return;
+  const closing = backend;
+  backend = null;
+  await closing.close();
 }
