@@ -1,10 +1,3 @@
-export type AspenType =
-  | StringConstructor
-  | NumberConstructor
-  | BooleanConstructor
-  | ArrayConstructor
-  | ObjectConstructor;
-
 export interface KeyOptions<ValueType> {
   persistent?: boolean | null;
   default: NoInfer<ValueType>;
@@ -15,7 +8,7 @@ export interface KeyOptions<ValueType> {
 }
 
 export interface KeyDef<ValueType> {
-  type: AspenType;
+  validate: (value: unknown) => boolean;
   persistent: boolean;
   default: ValueType;
   bootMirror: boolean | null;
@@ -23,5 +16,4 @@ export interface KeyDef<ValueType> {
   aliases: readonly string[] | null;
   onUpdate: readonly (() => void)[] | null;
 }
-
-export type Live<Tree> = Readonly<Tree>;
+;

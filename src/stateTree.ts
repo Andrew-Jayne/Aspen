@@ -5,7 +5,6 @@ import {
   getStorage,
   openStorage,
 } from "./storage.ts";
-import type { Live } from "./types.ts";
 
 function requireTree(self: unknown, method: string): void {
   if (self instanceof StateTree === false) {
@@ -71,7 +70,7 @@ export abstract class StateTree {
       persistenceUrl: string | null,
     ) => Tree,
     persistenceUrl: string | null = null,
-  ): Promise<Live<Tree>> {
+  ): Promise<Readonly<Tree>> {
     await openStorage();
 
     creating = true;
@@ -100,7 +99,7 @@ export abstract class StateTree {
       });
     }
 
-    return tree as unknown as Live<Tree>;
+    return tree as unknown as Readonly<Tree>;
   }
 
   bootstrap(this: TreeSelf): void {
@@ -140,7 +139,10 @@ export abstract class StateTree {
         owner.definition.persistent === true &&
         storage.hasItem(legacyKey) === false
       ) {
-        const value = decodeMirror(raw, owner.definition.type);
+        const value = decodeMirror(
+          raw,
+          typeof owner.definition.default === "string",
+        );
         if (value === undefined) continue;
         writes.push(storage.setItem(legacyKey, value));
         console.info(

@@ -44,8 +44,8 @@ export function encodeMirror(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function decodeMirror(raw: string, type: unknown): unknown {
-  if (type === String) return raw;
+export function decodeMirror(raw: string, isString: boolean): unknown {
+  if (isString === true) return raw;
   try {
     return JSON.parse(raw) as unknown;
   } catch {
@@ -59,6 +59,14 @@ type WriteOperation =
 
 function fatal(message: string, cause: unknown): Error {
   return new Error(`[Aspen] ${message}`, { cause });
+}
+
+function requireBackend(self: unknown, method: string): void {
+  if (self instanceof IndexedDBBackend === false) {
+    throw new Error(
+      `[Aspen] ${method}() was called without its storage backend as \`this\`. Call it as storage.${method}(...) or wrap it in a function.`,
+    );
+  }
 }
 
 class IndexedDBBackend {
@@ -122,26 +130,31 @@ class IndexedDBBackend {
     }
   }
 
-  getItem(key: string): unknown {
+  getItem(this: IndexedDBBackend, key: string): unknown {
+    requireBackend(this, "getItem");
     return this.cache.get(key);
   }
 
-  hasItem(key: string): boolean {
+  hasItem(this: IndexedDBBackend, key: string): boolean {
+    requireBackend(this, "hasItem");
     return this.cache.has(key);
   }
 
-  setItem(key: string, value: unknown): Promise<void> {
+  setItem(this: IndexedDBBackend, key: string, value: unknown): Promise<void> {
+    requireBackend(this, "setItem");
     structuredClone(value);
     this.cache.set(key, value);
     return this.queueWrite({ kind: "put", key, value });
   }
 
-  removeItem(key: string): Promise<void> {
+  removeItem(this: IndexedDBBackend, key: string): Promise<void> {
+    requireBackend(this, "removeItem");
     this.cache.delete(key);
     return this.queueWrite({ kind: "delete", key });
   }
 
-  key(index: number): string | null {
+  key(this: IndexedDBBackend, index: number): string | null {
+    requireBackend(this, "key");
     const cacheKeys = [...this.cache.keys()];
     if (index >= 0 && index < cacheKeys.length) {
       return cacheKeys[index] as string;
@@ -150,25 +163,34 @@ class IndexedDBBackend {
   }
 
   get length(): number {
+    requireBackend(this, "length");
     return this.cache.size;
   }
 
-  flush(): Promise<void> {
+  flush(this: IndexedDBBackend): Promise<void> {
+    requireBackend(this, "flush");
     return this.tail;
   }
 
-  async close(): Promise<void> {
+  async close(this: IndexedDBBackend): Promise<void> {
+    requireBackend(this, "close");
     await this.tail;
     this.database.close();
   }
 
-  private queueWrite(operation: WriteOperation): Promise<void> {
+  private queueWrite(
+    this: IndexedDBBackend,
+    operation: WriteOperation,
+  ): Promise<void> {
     const result = this.tail.then(() => this.commit(operation));
     this.tail = result.catch(() => undefined);
     return result;
   }
 
-  private commit(operation: WriteOperation): Promise<void> {
+  private commit(
+    this: IndexedDBBackend,
+    operation: WriteOperation,
+  ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const transaction = this.database.transaction(
         OBJECT_STORE_NAME,

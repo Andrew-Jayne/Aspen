@@ -1,5 +1,3 @@
-import type { AspenType } from "./types";
-
 function validateString(value: unknown): boolean {
   return typeof value === "string";
 }
@@ -24,11 +22,25 @@ function validateObject(value: unknown): boolean {
   );
 }
 
-export const validators: ReadonlyMap<AspenType, (value: unknown) => boolean> =
-  new Map<AspenType, (value: unknown) => boolean>([
-    [String, validateString],
-    [Number, validateNumber],
-    [Boolean, validateBoolean],
-    [Array, validateArray],
-    [Object, validateObject],
-  ]);
+const validators = [
+  validateString,
+  validateNumber,
+  validateBoolean,
+  validateArray,
+  validateObject,
+] as const;
+
+export function validatorFor(sample: unknown): (value: unknown) => boolean {
+  for (const validate of validators) {
+    if (validate(sample) === true) return validate;
+  }
+  throw new Error(
+    "[Aspen] Key default must be a string, number, boolean, array or object",
+  );
+}
+
+export function describeType(value: unknown): string {
+  if (Array.isArray(value) === true) return "array";
+  if (value === null) return "null";
+  return typeof value;
+}

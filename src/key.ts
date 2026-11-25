@@ -1,14 +1,13 @@
 import { encodeMirror, getStorage } from "./storage.ts";
 // biome-ignore format: because the bundler import striper is too dumb to handle multi line
-import type {AspenType, KeyDef, KeyOptions,} from "./types.ts";
-import { validators } from "./validation.ts";
+import type {KeyDef, KeyOptions,} from "./types.ts";
+import { describeType, validatorFor } from "./validation.ts";
 
 interface Binding {
   name: string;
   storageKey: string;
   ephemeralStore: Map<string, unknown>;
   onUpdate: readonly (() => void)[];
-  validate: (value: unknown) => boolean;
 }
 
 function isolate<ValueType>(value: ValueType): ValueType {
@@ -16,15 +15,6 @@ function isolate<ValueType>(value: ValueType): ValueType {
     return structuredClone(value);
   }
   return value;
-}
-
-function typeOfDefault(value: unknown): AspenType {
-  for (const [type, validate] of validators) {
-    if (validate(value) === true) return type;
-  }
-  throw new Error(
-    "[Aspen] Key default must be a string, number, boolean, array or object",
-  );
 }
 
 function requireKey(self: unknown, method: string): void {
@@ -50,16 +40,15 @@ export class AspenKey<ValueType = unknown> {
   constructor(
     declared: unknown extends ValueType
       ? "AspenKey requires a declared type: new AspenKey<YourType>({ ... })"
-      : KeyOptions<ValueType>
+      : KeyOptions<ValueType>,
   ) {
     const options = declared as KeyOptions<ValueType>;
     let persistent = true;
     if (options.persistent === false) {
       persistent = false;
     }
-    const type = typeOfDefault(options.default);
     this.definition = {
-      type,
+      validate: validatorFor(options.default),
       persistent,
       default: options.default,
       bootMirror: orNull(options.bootMirror),
@@ -81,19 +70,13 @@ export class AspenKey<ValueType = unknown> {
     ephemeralStore: Map<string, unknown>,
   ): void {
     requireKey(this, "bind");
-    const type = this.definition.type;
-    const validate = validators.get(type);
-    if (validate === undefined) {
-      throw new Error(
-        `[Aspen] Unknown type for key "${name}" Valid types: String, Number, Boolean, Array, Object`,
-      );
-    }
+    const validate = this.definition.validate;
 
     if (this.definition.allowed !== null) {
       for (const entry of this.definition.allowed) {
         if (validate(entry) === false) {
           throw new Error(
-            `[Aspen] Allowed value ${JSON.stringify(entry)} for "${name}" is not of the same type (${type.name}) as its default`,
+            `[Aspen] Allowed value ${JSON.stringify(entry)} for "${name}" is not of the same type (${describeType(this.definition.default)}) as its default`,
           );
         }
       }
@@ -157,7 +140,6 @@ export class AspenKey<ValueType = unknown> {
       storageKey: namespace + name,
       ephemeralStore,
       onUpdate,
-      validate,
     };
   }
 
@@ -181,9 +163,9 @@ export class AspenKey<ValueType = unknown> {
     requireKey(this, "update");
     const binding = this.bound();
 
-    if (binding.validate(value) === false) {
+    if (this.definition.validate(value) === false) {
       throw new Error(
-        `[Aspen] Type error on "${binding.name}": expected ${this.definition.type.name}, got ${typeof value}`,
+        `[Aspen] Type error on "${binding.name}": expected ${describeType(this.definition.default)}, got ${describeType(value)}`,
       );
     }
 
@@ -210,9 +192,9 @@ export class AspenKey<ValueType = unknown> {
 
   toggle(this: AspenKey<boolean>): Promise<void> {
     requireKey(this, "toggle");
-    if (this.definition.type !== Boolean) {
+    if (typeof this.definition.default !== "boolean") {
       throw new Error(
-        `[Aspen] toggle() requires a boolean key; "${this.storageKey}" is ${this.definition.type.name}`,
+        `[Aspen] toggle() requires a boolean key; "${this.storageKey}" is ${describeType(this.definition.default)}`,
       );
     }
     return this.update(this.value === false);
@@ -292,7 +274,7 @@ export class AspenKey<ValueType = unknown> {
 
   accepts(this: AspenKey<ValueType>, value: unknown): boolean {
     requireKey(this, "accepts");
-    if (this.bound().validate(value) === false) return false;
+    if (this.definition.validate(value) === false) return false;
     if (this.definition.allowed === null) return true;
     return (this.definition.allowed as readonly unknown[]).includes(value);
   }
