@@ -7,25 +7,25 @@ import type { Notification, Profile, Theme } from "./types.ts";
 export class DemoTree extends StateTree {
   namespace = "demo:";
 
-  theme = new AspenKey<Theme>({
+  theme = AspenKey.string<Theme>({
     bootMirror: true,
     default: "light",
     allowed: ["light", "dark"],
     onUpdate: [renderTheme],
   });
 
-  persistCount = new AspenKey<number>({
+  persistCount = AspenKey.number({
     default: 0,
     onUpdate: [renderCounters],
   });
 
-  sessionCount = new AspenKey<number>({
+  sessionCount = AspenKey.number({
     persistent: false,
     default: 0,
     onUpdate: [renderCounters],
   });
 
-  profile = new AspenKey<Profile>({
+  profile = AspenKey.object<Profile>({
     default: {
       name: "Ada Lovelace",
       bio: "Mathematician and writer.",
@@ -34,13 +34,10 @@ export class DemoTree extends StateTree {
     onUpdate: [renderProfile],
   });
 
-  // Not rendered by a fixed callback: toasts and the poller attach with listen().
-  notification = new AspenKey<Notification>({
+  notification = AspenKey.object<Notification>({
     persistent: false,
     default: { id: "", message: "", level: "info" },
   });
 }
 
-// The feature modules import this back for their render functions. That cycle is
-// safe: they only read `state` when called, after this module has finished.
 export const state = await DemoTree.create();

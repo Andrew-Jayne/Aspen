@@ -22,13 +22,7 @@ const BUNDLE = `\
  * @commit ${execSync("git rev-parse --short HEAD").toString().trim()}
  */
 
-${stripImports(readFileSync("src/types.ts", "utf8"))}
-
 ${stripImports(readFileSync("src/storage.ts", "utf8"))}
-
-${stripImports(readFileSync("src/seralize.ts", "utf8"))}
-
-${stripImports(readFileSync("src/validation.ts", "utf8"))}
 
 ${stripImports(readFileSync("src/key.ts", "utf8"))}
 
