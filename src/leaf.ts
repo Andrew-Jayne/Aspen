@@ -32,10 +32,12 @@ class StateLeaf<ValueType = unknown> {
   private readonly aliases: readonly string[] | null;
   private readonly onUpdate: readonly (() => void)[] | null;
   private binding: Binding | null;
+  // Listeners added with listen(), keyed by sync wave and kept in ascending
+  // wave order so notify() can walk the map front to back.
   private dynamicCallbacks: Map<number, (() => void)[]> = new Map<
     number,
     (() => void)[]
-  >(); //WTF Is this type
+  >();
 
   private constructor(
     type: StorableType,
@@ -84,6 +86,11 @@ class StateLeaf<ValueType = unknown> {
     return this.bound().storageKey;
   }
 
+  /**
+   * Persistent values come back frozen: storage shares one copy with every
+   * reader. Ephemeral values are the exact reference last passed to update(),
+   * so they can hold things storage can't clone (promises, files).
+   */
   public get value(): ValueType {
     const binding = this.bound();
 
@@ -93,9 +100,7 @@ class StateLeaf<ValueType = unknown> {
           `[Aspen] "${binding.name}" is missing from storage. create() seeds every persistent leaf; something removed it afterwards.`,
         );
       }
-      return StateLeaf.isolate(
-        IndexedDBBackend.gateway.getItem(binding.storageKey),
-      ) as ValueType;
+      return IndexedDBBackend.gateway.getItem(binding.storageKey) as ValueType;
     }
 
     return binding.ephemeralStore.get(binding.name) as ValueType;
@@ -110,6 +115,12 @@ class StateLeaf<ValueType = unknown> {
     ephemeralStore: Map<string, unknown>,
   ): void {
     StateLeaf.requireLeaf(this, "bind");
+
+    if (this.binding !== null) {
+      throw new Error(
+        `[Aspen] Leaf "${name}" is already bound as "${this.binding.storageKey}". Give each tree its own leaves.`,
+      );
+    }
 
     if (this.allowed !== null) {
       for (const entry of this.allowed) {
@@ -158,7 +169,7 @@ class StateLeaf<ValueType = unknown> {
         }
         if (callback.length > 0) {
           throw new Error(
-            `[Aspen] onUpdate function "${callback.name}" for "${name} declares parameters. Render functions take no arguments and read state via tree properties.`,
+            `[Aspen] onUpdate function "${callback.name}" for "${name}" declares parameters. Render functions take no arguments and read state via tree properties.`,
           );
         }
         if (seen.has(callback) === true) {
@@ -179,7 +190,11 @@ class StateLeaf<ValueType = unknown> {
     };
 
     if (this.persistent === false) {
-      ephemeralStore.set(name, StateLeaf.isolate(this.default));
+      let seeded: unknown = this.default;
+      if (typeof seeded === "object" && seeded !== null) {
+        seeded = structuredClone(seeded);
+      }
+      ephemeralStore.set(name, seeded);
     }
   }
 
@@ -191,20 +206,21 @@ class StateLeaf<ValueType = unknown> {
 
     if (this.accepts(value) === false) {
       throw new Error(
-        `[Aspen] ValueType ${JSON.stringify(value)} is not allowed for "${binding.name}". Allowed: ${JSON.stringify(this.allowed)}`,
+        `[Aspen] Value ${JSON.stringify(value)} is not allowed for "${binding.name}". Allowed: ${JSON.stringify(this.allowed)}`,
       );
     }
 
     let pending: Promise<void> = Promise.resolve();
     if (this.persistent === true) {
-      const stored = StateLeaf.isolate(value);
+      pending = IndexedDBBackend.gateway.setItem(binding.storageKey, value);
       if (this.bootMirror === true) {
-        localStorage.setItem(
-          binding.storageKey,
-          StateLeaf.encodeMirror(stored),
-        );
+        // Mirror only what reached IndexedDB, so a failed write can't leave
+        // first paint showing a value the store never kept.
+        const mirror = StateLeaf.encodeMirror(value);
+        pending = pending.then(() => {
+          localStorage.setItem(binding.storageKey, mirror);
+        });
       }
-      pending = IndexedDBBackend.gateway.setItem(binding.storageKey, stored);
     } else {
       binding.ephemeralStore.set(binding.name, value);
     }
@@ -225,7 +241,7 @@ class StateLeaf<ValueType = unknown> {
 
   public listen(
     this: StateLeaf<ValueType>,
-    callback: unknown,
+    callback: () => void,
     syncWave: number | null = null,
   ): (() => void) & Disposable {
     StateLeaf.requireLeaf(this, "listen");
@@ -236,13 +252,12 @@ class StateLeaf<ValueType = unknown> {
     if (typeof callback !== "function") {
       throw new Error("[Aspen] listen callback must be a named function.");
     }
-    const func = callback as (...args: unknown[]) => unknown;
-    if (func.name === "") {
+    if (callback.name === "") {
       throw new Error("[Aspen] listen callback must be a named function.");
     }
-    if (func.length > 0) {
+    if (callback.length > 0) {
       throw new Error(
-        `[Aspen] listen callback "${func.name}" declares parameters. Render functions take no arguments and read state via tree properties.`,
+        `[Aspen] listen callback "${callback.name}" declares parameters. Render functions take no arguments and read state via tree properties.`,
       );
     }
     if (
@@ -252,10 +267,9 @@ class StateLeaf<ValueType = unknown> {
     ) {
       throw new Error(`[Aspen] syncWave must be 0-255, got ${resolvedWave}`);
     }
-    const typed = callback as () => void;
     const existing = this.dynamicCallbacks.get(resolvedWave);
     if (existing !== undefined) {
-      existing.push(typed);
+      existing.push(callback);
     } else {
       const sorted = new Map<number, (() => void)[]>();
       for (const waveIndex of [
@@ -263,7 +277,7 @@ class StateLeaf<ValueType = unknown> {
         resolvedWave,
       ].sort((waveA, waveB) => waveA - waveB)) {
         if (waveIndex === resolvedWave) {
-          sorted.set(waveIndex, [typed]);
+          sorted.set(waveIndex, [callback]);
         } else {
           sorted.set(
             waveIndex,
@@ -276,7 +290,7 @@ class StateLeaf<ValueType = unknown> {
     const unlisten = (): void => {
       const list = this.dynamicCallbacks.get(resolvedWave);
       if (list === undefined) return;
-      const idx = list.indexOf(typed);
+      const idx = list.indexOf(callback);
       if (idx !== -1) list.splice(idx, 1);
     };
     unlisten[Symbol.dispose] = unlisten;
@@ -326,11 +340,12 @@ class StateLeaf<ValueType = unknown> {
           console.info(`[Aspen] Migrated "${alias}" → "${storageKey}"`);
         }
         writes.push(storage.removeItem(alias));
+        localStorage.removeItem(alias);
       }
     }
 
     if (storage.hasItem(storageKey) === false) {
-      writes.push(storage.setItem(storageKey, StateLeaf.isolate(this.default)));
+      writes.push(storage.setItem(storageKey, this.default));
       console.info(
         `[Aspen] Restored default for missing leaf: ${binding.name}`,
       );
@@ -338,8 +353,10 @@ class StateLeaf<ValueType = unknown> {
       console.warn(
         `[Aspen] Invalid stored value for "${binding.name}"; resetting to default`,
       );
-      writes.push(storage.setItem(storageKey, StateLeaf.isolate(this.default)));
+      writes.push(storage.setItem(storageKey, this.default));
     }
+
+    await Promise.all(writes);
 
     if (this.bootMirror === true) {
       localStorage.setItem(
@@ -349,8 +366,6 @@ class StateLeaf<ValueType = unknown> {
     } else {
       localStorage.removeItem(storageKey);
     }
-
-    await Promise.all(writes);
   }
 
   // Public static methods
@@ -437,13 +452,6 @@ class StateLeaf<ValueType = unknown> {
         `[Aspen] ${method}() was called without its leaf as \`this\`. Call it as leaf.${method}(...) or wrap it in a function.`,
       );
     }
-  }
-
-  private static isolate<ValueType>(value: ValueType): ValueType {
-    if (typeof value === "object" && value !== null) {
-      return structuredClone(value);
-    }
-    return value;
   }
 
   private static encodeMirror(value: unknown): string {

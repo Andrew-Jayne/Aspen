@@ -5,7 +5,7 @@ import { StateTree } from "./tree.ts";
 type GroveSelf = Pick<StateGrove, keyof StateGrove>;
 
 interface TreeClass {
-  build(persistenceUrl: string | null): Promise<Readonly<StateTree>>;
+  create(persistenceUrl: string | null): Promise<Readonly<StateTree>>;
 }
 
 type Planted<GroveType> = {
@@ -60,6 +60,9 @@ export abstract class StateGrove {
     data: Record<string, unknown>,
   ): Promise<void> {
     StateGrove.requireGrove(this, "importPersistent");
+    for (const tree of StateGrove.treesOf(this)) {
+      tree.checkImport(data);
+    }
     const imports: Promise<void>[] = [];
     for (const tree of StateGrove.treesOf(this)) {
       imports.push(tree.importPersistent(data));
@@ -106,7 +109,6 @@ export abstract class StateGrove {
     persistenceUrl: string | null = null,
   ): Promise<Planted<GroveType>> {
     await IndexedDBBackend.connect();
-    const storage = IndexedDBBackend.gateway;
 
     StateGrove.creating = true;
     let grove: GroveType;
@@ -117,6 +119,7 @@ export abstract class StateGrove {
     }
 
     const planted = new Map<string, Readonly<StateTree>>();
+    const plantedClasses = new Map<unknown, string>();
     for (const [name, field] of Object.entries(grove) as [string, unknown][]) {
       if (field instanceof StateTree === true) {
         throw new Error(
@@ -136,56 +139,18 @@ export abstract class StateGrove {
         );
       }
 
-      planted.set(name, await (field as unknown as TreeClass).build(null));
-    }
-
-    const entries = [...planted];
-    for (const [index, [nameA, treeA]] of entries.entries()) {
-      if (treeA.namespace === "") {
+      const earlier = plantedClasses.get(field);
+      if (earlier !== undefined) {
         throw new Error(
-          `[Aspen] Tree "${nameA}" has an empty namespace. Every tree in a grove needs its own prefix.`,
+          `[Aspen] Grove fields "${earlier}" and "${name}" both plant ${field.name}. Each tree belongs in a grove once.`,
         );
       }
-      for (const [nameB, treeB] of entries.slice(index + 1)) {
-        if (
-          treeA.namespace.startsWith(treeB.namespace) === true ||
-          treeB.namespace.startsWith(treeA.namespace) === true
-        ) {
-          throw new Error(
-            `[Aspen] Namespaces of "${nameA}" ("${treeA.namespace}") and "${nameB}" ("${treeB.namespace}") overlap. Trees in a grove need prefixes that don't contain each other.`,
-          );
-        }
-      }
-    }
+      plantedClasses.set(field, name);
 
-    const validations: Promise<void>[] = [];
-    for (const tree of planted.values()) {
-      validations.push(tree.validateStorage());
+      // create() claims the tree's namespace before it touches storage, so
+      // trees whose prefixes overlap fail here instead of sweeping each other.
+      planted.set(name, await (field as unknown as TreeClass).create(null));
     }
-    await Promise.all(validations);
-
-    const orphaned: string[] = [];
-    for (let index = 0; index < storage.length; index++) {
-      const storedKey = storage.key(index);
-      if (storedKey === null) continue;
-      let owned = false;
-      for (const tree of planted.values()) {
-        if (storedKey.startsWith(tree.namespace) === true) {
-          owned = true;
-        }
-      }
-      if (owned === false) {
-        orphaned.push(storedKey);
-      }
-    }
-    const removals: Promise<void>[] = [];
-    for (const storedKey of orphaned) {
-      console.warn(
-        `[Aspen] Removing key outside every grove namespace: ${storedKey}`,
-      );
-      removals.push(storage.removeItem(storedKey));
-    }
-    await Promise.all(removals);
 
     for (const [name, tree] of planted) {
       Object.defineProperty(grove, name, {

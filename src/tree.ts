@@ -4,6 +4,8 @@ import { IndexedDBBackend } from "./storage.ts";
 
 type TreeSelf = Pick<StateTree, keyof StateTree>;
 
+type TreeClass = abstract new (...args: never[]) => StateTree;
+
 export abstract class StateTree {
   abstract readonly namespace: string;
   readonly persistenceUrl: string | null;
@@ -11,6 +13,10 @@ export abstract class StateTree {
   private readonly ephemeralStore: Map<string, unknown> = new Map();
 
   private static creating = false;
+  // Namespace -> the tree class that claimed it on this page. A tree removes
+  // orphans under its own prefix, so two trees whose prefixes contain each
+  // other would delete each other's leaves.
+  private static readonly claimed = new Map<string, TreeClass>();
   private static readonly leafCache = new WeakMap<object, StateLeaf[]>();
   private static readonly RESERVED_FIELDS: ReadonlySet<string> = new Set([
     "namespace",
@@ -95,21 +101,19 @@ export abstract class StateTree {
     return out;
   }
 
+  /** Throws if importPersistent(data) would reject any value; writes nothing. */
+  public checkImport(this: TreeSelf, data: Record<string, unknown>): void {
+    StateTree.requireTree(this, "checkImport");
+    StateTree.planImport(this, data);
+  }
+
   public async importPersistent(
     this: TreeSelf,
     data: Record<string, unknown>,
   ): Promise<void> {
     StateTree.requireTree(this, "importPersistent");
     const writes: Promise<void>[] = [];
-    for (const [storageKey, value] of Object.entries(data)) {
-      if (storageKey.startsWith(this.namespace) === false) continue;
-
-      const leaf = (this as unknown as Record<string, unknown>)[
-        storageKey.slice(this.namespace.length)
-      ];
-      if (leaf instanceof StateLeaf === false) continue;
-      if (IndexedDBBackend.gateway.hasItem(storageKey) === false) continue;
-
+    for (const [leaf, value] of StateTree.planImport(this, data)) {
       writes.push(leaf.update(value));
     }
     await Promise.all(writes);
@@ -158,36 +162,27 @@ export abstract class StateTree {
       StateTree.creating = false;
     }
 
-    StateTree.bindLeaves(tree);
-    await tree.validateStorage();
-
-    return tree as unknown as Readonly<Tree>;
-  }
-  
-  public static async build<Tree extends StateTree>(
-    this: new (
-      persistenceUrl: string | null,
-    ) => Tree,
-    persistenceUrl: string | null = null,
-  ): Promise<Readonly<Tree>> {
-    await IndexedDBBackend.connect();
-
-    StateTree.creating = true;
-    let tree: Tree;
-    try {
-      tree = new this(persistenceUrl);
-    } finally {
-      StateTree.creating = false;
+    // Claim the namespace before touching storage: a tree removes orphans
+    // under its own prefix, so overlapping prefixes would delete each other.
+    const treeClass = tree.constructor as TreeClass;
+    if (tree.namespace === "") {
+      throw new Error(
+        `[Aspen] ${treeClass.name} has an empty namespace. Every tree needs its own prefix; an empty one would claim every key in storage.`,
+      );
     }
+    for (const [namespace, owner] of StateTree.claimed) {
+      if (namespace === tree.namespace && owner === treeClass) continue;
+      if (
+        namespace.startsWith(tree.namespace) === true ||
+        tree.namespace.startsWith(namespace) === true
+      ) {
+        throw new Error(
+          `[Aspen] Namespace "${tree.namespace}" of ${treeClass.name} overlaps "${namespace}" of ${owner.name}. Trees need prefixes that don't contain each other.`,
+        );
+      }
+    }
+    StateTree.claimed.set(tree.namespace, treeClass);
 
-    StateTree.bindLeaves(tree);
-
-    return tree as unknown as Readonly<Tree>;
-  }
-
-  // Private static methods
-
-  private static bindLeaves(tree: StateTree): void {
     for (const [name, field] of Object.entries(tree) as [string, unknown][]) {
       if (field instanceof StateLeaf === false) continue;
       if (name in StateTree.prototype === true) {
@@ -210,6 +205,40 @@ export abstract class StateTree {
         writable: false,
       });
     }
+
+    await tree.validateStorage();
+
+    return tree as unknown as Readonly<Tree>;
+  }
+
+  // Private static methods
+
+  /**
+   * Pairs every importable entry with its leaf, checking every value first so
+   * a bad entry rejects the whole import before anything is written.
+   */
+  private static planImport(
+    tree: TreeSelf,
+    data: Record<string, unknown>,
+  ): [StateLeaf, unknown][] {
+    const plan: [StateLeaf, unknown][] = [];
+    const rejected: string[] = [];
+    for (const leaf of StateTree.ownLeavesOf(tree)) {
+      if (Object.hasOwn(data, leaf.storageKey) === false) continue;
+      if (IndexedDBBackend.gateway.hasItem(leaf.storageKey) === false) continue;
+      const value = data[leaf.storageKey];
+      if (leaf.accepts(value) === false) {
+        rejected.push(leaf.storageKey);
+        continue;
+      }
+      plan.push([leaf, value]);
+    }
+    if (rejected.length > 0) {
+      throw new Error(
+        `[Aspen] Import rejected; invalid values for: ${rejected.join(", ")}. Nothing was written.`,
+      );
+    }
+    return plan;
   }
 
   private static requireTree(self: unknown, method: string): void {

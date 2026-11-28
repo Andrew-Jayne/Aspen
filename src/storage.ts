@@ -86,9 +86,9 @@ export class IndexedDBBackend {
     value: unknown,
   ): Promise<void> {
     IndexedDBBackend.requireBackend(this, "setItem");
-    structuredClone(value);
-    this.cache.set(key, value);
-    return this.queueWrite({ kind: "put", key, value });
+    const stored = IndexedDBBackend.freeze(structuredClone(value));
+    this.cache.set(key, stored);
+    return this.queueWrite({ kind: "put", key, value: stored });
   }
 
   public removeItem(this: IndexedDBBackend, key: string): Promise<void> {
@@ -223,7 +223,7 @@ export class IndexedDBBackend {
 
       const CACHE = new Map<string, unknown>();
       for (const [index, key] of keys.entries()) {
-        CACHE.set(String(key), values[index]);
+        CACHE.set(String(key), IndexedDBBackend.freeze(values[index]));
       }
       return new IndexedDBBackend(database, CACHE);
     } catch (error) {
@@ -238,6 +238,20 @@ export class IndexedDBBackend {
         `[Aspen] ${method}() was called without its storage backend as \`this\`. Call it as storage.${method}(...) or wrap it in a function.`,
       );
     }
+  }
+
+  /**
+   * Cached values are shared with every reader, so they are frozen all the way
+   * down. Leaves hand them out without copying; a write replaces the whole value.
+   */
+  private static freeze<Value>(value: Value): Value {
+    if (typeof value !== "object" || value === null) return value;
+    if (Object.isFrozen(value) === true) return value;
+    Object.freeze(value);
+    for (const nested of Object.values(value)) {
+      IndexedDBBackend.freeze(nested);
+    }
+    return value;
   }
 
   private static fatal(message: string, cause: unknown): Error {
