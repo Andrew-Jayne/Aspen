@@ -1,8 +1,8 @@
-import { state } from "../tree.ts";
+import { grove } from "../grove.ts";
 import { find } from "../dom.ts";
 
 function showLastSeen(): void {
-  const { id, level, message } = state.notification.value;
+  const { id, level, message } = grove.activity.notification.value;
   if (id === "") return;
   find("#poll-status", HTMLElement).textContent =
     `Last seen: [${level}] ${message}`;
@@ -10,7 +10,7 @@ function showLastSeen(): void {
 
 async function pollUntil(stopped: Promise<void>): Promise<void> {
   // The listener lives exactly as long as this scope, then is disposed.
-  using _listener = state.notification.listen(showLastSeen);
+  using _listener = grove.activity.notification.listen(showLastSeen);
   await stopped;
 }
 

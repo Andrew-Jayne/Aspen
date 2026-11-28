@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <title>Aspen Demo</title>
     <script>
-      const stored = localStorage.getItem("demo:theme");
+      const stored = localStorage.getItem("demo.settings:theme");
       document.documentElement.dataset.theme = stored === "dark" ? "dark" : "light";
     </script>
     <link rel="stylesheet" href="./demo.css" />
@@ -13,6 +13,7 @@
   <body>
     <h1>Aspen Demo</h1>
     <p>Theme is applied from <code>localStorage</code> before the first <code>await</code> via <code>bootMirror</code>.</p>
+    <p>State lives in three trees (<code>settings</code>, <code>activity</code>, <code>user</code>) planted in one <code>StateGrove</code>.</p>
 
     <section>
       <h2>Theme (bootMirror)</h2>
@@ -56,6 +57,17 @@
         <button type="button" id="poll-btn">Start polling</button>
         <span id="poll-status">Idle.</span>
       </div>
+    </section>
+
+    <section>
+      <h2>Backup (grove-wide export / import)</h2>
+      <p>One <code>exportPersistent()</code> on the grove gathers every tree's persistent leaves. Edit the JSON and import it back; each tree takes the keys under its own namespace.</p>
+      <div class="row">
+        <button type="button" id="backup-export">Export</button>
+        <button type="button" id="backup-import">Import</button>
+        <span id="backup-status"></span>
+      </div>
+      <textarea id="backup-data" spellcheck="false"></textarea>
     </section>
 
     <div id="toast-zone"></div>

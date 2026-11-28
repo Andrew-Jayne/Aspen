@@ -1,8 +1,8 @@
-import { state } from "../tree.ts";
+import { grove } from "../grove.ts";
 import { find } from "../dom.ts";
 
 export function renderProfile(): void {
-  const profile = state.profile.value;
+  const profile = grove.user.profile.value;
   find("#profile-name", HTMLElement).textContent = profile.name;
   find("#profile-bio", HTMLElement).textContent = profile.bio;
   find("#profile-tags", HTMLUListElement).replaceChildren(
@@ -26,7 +26,7 @@ function parseTags(raw: string): string[] {
 
 export function initProfile(): void {
   find("#profile-save", HTMLButtonElement).addEventListener("click", () => {
-    void state.profile.update({
+    void grove.user.profile.update({
       name: find("#name-input", HTMLInputElement).value,
       bio: find("#bio-input", HTMLTextAreaElement).value,
       tags: parseTags(find("#tag-input", HTMLInputElement).value),

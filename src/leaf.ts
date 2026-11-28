@@ -1,4 +1,4 @@
-import type { IndexedDBBackend } from "./storage.ts";
+import { IndexedDBBackend } from "./storage.ts";
 
 type StorableType =
   | StringConstructor
@@ -10,12 +10,11 @@ type StorableType =
 interface Binding {
   name: string;
   storageKey: string;
-  storage: IndexedDBBackend;
   ephemeralStore: Map<string, unknown>;
   onUpdate: readonly (() => void)[];
 }
 
-interface KeyOptions<ValueType> {
+interface StateLeafOptions<ValueType> {
   persistent?: boolean | null;
   default: NoInfer<ValueType>;
   bootMirror?: boolean | null;
@@ -24,7 +23,7 @@ interface KeyOptions<ValueType> {
   onUpdate?: readonly (() => void)[] | null;
 }
 
-class AspenKey<ValueType = unknown> {
+class StateLeaf<ValueType = unknown> {
   private readonly type: StorableType;
   private readonly persistent: boolean;
   private readonly default: ValueType;
@@ -33,9 +32,15 @@ class AspenKey<ValueType = unknown> {
   private readonly aliases: readonly string[] | null;
   private readonly onUpdate: readonly (() => void)[] | null;
   private binding: Binding | null;
-  private dynamicCallbacks: Map<number, (() => void)[]> = new Map<number, (() => void)[]>(); //WTF Is this type
+  private dynamicCallbacks: Map<number, (() => void)[]> = new Map<
+    number,
+    (() => void)[]
+  >(); //WTF Is this type
 
-  private constructor(type: StorableType, options: KeyOptions<ValueType>) {
+  private constructor(
+    type: StorableType,
+    options: StateLeafOptions<ValueType>,
+  ) {
     if (options.persistent === false) {
       this.persistent = false;
     } else {
@@ -43,7 +48,7 @@ class AspenKey<ValueType = unknown> {
     }
 
     this.type = type;
-    AspenKey.checkType(options.default, type, "key default");
+    StateLeaf.checkType(options.default, type, "leaf default");
     this.default = options.default;
 
     if (options.bootMirror === true) {
@@ -83,12 +88,14 @@ class AspenKey<ValueType = unknown> {
     const binding = this.bound();
 
     if (this.persistent === true) {
-      if (binding.storage.hasItem(binding.storageKey) === false) {
+      if (IndexedDBBackend.gateway.hasItem(binding.storageKey) === false) {
         throw new Error(
-          `[Aspen] "${binding.name}" is missing from storage. create() seeds every persistent key; something removed it afterwards.`,
+          `[Aspen] "${binding.name}" is missing from storage. create() seeds every persistent leaf; something removed it afterwards.`,
         );
       }
-      return AspenKey.isolate(binding.storage.getItem(binding.storageKey)) as ValueType;
+      return StateLeaf.isolate(
+        IndexedDBBackend.gateway.getItem(binding.storageKey),
+      ) as ValueType;
     }
 
     return binding.ephemeralStore.get(binding.name) as ValueType;
@@ -97,17 +104,16 @@ class AspenKey<ValueType = unknown> {
   // Public methods
 
   public bind(
-    this: AspenKey<ValueType>,
+    this: StateLeaf<ValueType>,
     name: string,
     namespace: string,
-    storage: IndexedDBBackend,
     ephemeralStore: Map<string, unknown>,
   ): void {
-    AspenKey.requireKey(this, "bind");
+    StateLeaf.requireLeaf(this, "bind");
 
     if (this.allowed !== null) {
       for (const entry of this.allowed) {
-        AspenKey.checkType(
+        StateLeaf.checkType(
           entry,
           this.type,
           `allowed value ${JSON.stringify(entry)} for "${name}"`,
@@ -168,21 +174,20 @@ class AspenKey<ValueType = unknown> {
     this.binding = {
       name,
       storageKey: namespace + name,
-      storage,
       ephemeralStore,
       onUpdate,
     };
 
     if (this.persistent === false) {
-      ephemeralStore.set(name, AspenKey.isolate(this.default));
+      ephemeralStore.set(name, StateLeaf.isolate(this.default));
     }
   }
 
-  public update(this: AspenKey<ValueType>, value: ValueType): Promise<void> {
-    AspenKey.requireKey(this, "update");
+  public update(this: StateLeaf<ValueType>, value: ValueType): Promise<void> {
+    StateLeaf.requireLeaf(this, "update");
     const binding = this.bound();
 
-    AspenKey.checkType(value, this.type, `"${binding.name}"`);
+    StateLeaf.checkType(value, this.type, `"${binding.name}"`);
 
     if (this.accepts(value) === false) {
       throw new Error(
@@ -192,14 +197,14 @@ class AspenKey<ValueType = unknown> {
 
     let pending: Promise<void> = Promise.resolve();
     if (this.persistent === true) {
-      const stored = AspenKey.isolate(value);
+      const stored = StateLeaf.isolate(value);
       if (this.bootMirror === true) {
         localStorage.setItem(
           binding.storageKey,
-          AspenKey.encodeMirror(stored),
+          StateLeaf.encodeMirror(stored),
         );
       }
-      pending = binding.storage.setItem(binding.storageKey, stored);
+      pending = IndexedDBBackend.gateway.setItem(binding.storageKey, stored);
     } else {
       binding.ephemeralStore.set(binding.name, value);
     }
@@ -208,22 +213,22 @@ class AspenKey<ValueType = unknown> {
     return pending;
   }
 
-  public toggle(this: AspenKey<boolean>): Promise<void> {
-    AspenKey.requireKey(this, "toggle");
+  public toggle(this: StateLeaf<boolean>): Promise<void> {
+    StateLeaf.requireLeaf(this, "toggle");
     if (this.type !== Boolean) {
       throw new Error(
-        `[Aspen] toggle() on "${this.storageKey}" requires a Boolean key, got ${this.type.name}`,
+        `[Aspen] toggle() on "${this.storageKey}" requires a Boolean leaf, got ${this.type.name}`,
       );
     }
     return this.update(this.value === false);
   }
 
   public listen(
-    this: AspenKey<ValueType>,
+    this: StateLeaf<ValueType>,
     callback: unknown,
     syncWave: number | null = null,
   ): (() => void) & Disposable {
-    AspenKey.requireKey(this, "listen");
+    StateLeaf.requireLeaf(this, "listen");
     let resolvedWave = 0;
     if (syncWave !== null) {
       resolvedWave = syncWave;
@@ -278,8 +283,8 @@ class AspenKey<ValueType = unknown> {
     return unlisten;
   }
 
-  public notify(this: AspenKey<ValueType>): void {
-    AspenKey.requireKey(this, "notify");
+  public notify(this: StateLeaf<ValueType>): void {
+    StateLeaf.requireLeaf(this, "notify");
     for (const fn of this.bound().onUpdate) {
       fn();
     }
@@ -290,17 +295,17 @@ class AspenKey<ValueType = unknown> {
     }
   }
 
-  public accepts(this: AspenKey<ValueType>, value: unknown): boolean {
-    AspenKey.requireKey(this, "accepts");
-    if (AspenKey.checkType(value, this.type) === false) return false;
+  public accepts(this: StateLeaf<ValueType>, value: unknown): boolean {
+    StateLeaf.requireLeaf(this, "accepts");
+    if (StateLeaf.checkType(value, this.type) === false) return false;
     if (this.allowed === null) return true;
     return (this.allowed as readonly unknown[]).includes(value);
   }
 
-  public async prepareStorage(this: AspenKey<ValueType>): Promise<void> {
-    AspenKey.requireKey(this, "prepareStorage");
+  public async prepareStorage(this: StateLeaf<ValueType>): Promise<void> {
+    StateLeaf.requireLeaf(this, "prepareStorage");
     const binding = this.bound();
-    const storage = binding.storage;
+    const storage = IndexedDBBackend.gateway;
     const storageKey = binding.storageKey;
     const writes: Promise<void>[] = [];
 
@@ -325,19 +330,21 @@ class AspenKey<ValueType = unknown> {
     }
 
     if (storage.hasItem(storageKey) === false) {
-      writes.push(storage.setItem(storageKey, AspenKey.isolate(this.default)));
-      console.info(`[Aspen] Restored default for missing key: ${binding.name}`);
+      writes.push(storage.setItem(storageKey, StateLeaf.isolate(this.default)));
+      console.info(
+        `[Aspen] Restored default for missing leaf: ${binding.name}`,
+      );
     } else if (this.accepts(storage.getItem(storageKey)) === false) {
       console.warn(
         `[Aspen] Invalid stored value for "${binding.name}"; resetting to default`,
       );
-      writes.push(storage.setItem(storageKey, AspenKey.isolate(this.default)));
+      writes.push(storage.setItem(storageKey, StateLeaf.isolate(this.default)));
     }
 
     if (this.bootMirror === true) {
       localStorage.setItem(
         storageKey,
-        AspenKey.encodeMirror(storage.getItem(storageKey)),
+        StateLeaf.encodeMirror(storage.getItem(storageKey)),
       );
     } else {
       localStorage.removeItem(storageKey);
@@ -349,45 +356,51 @@ class AspenKey<ValueType = unknown> {
   // Public static methods
 
   public static boolean<ValueType extends boolean = boolean>(
-    options: KeyOptions<ValueType>,
-  ): AspenKey<ValueType> {
-    return new AspenKey<ValueType>(Boolean, options);
+    options: StateLeafOptions<ValueType>,
+  ): StateLeaf<ValueType> {
+    return new StateLeaf<ValueType>(Boolean, options);
   }
 
   public static string<ValueType extends string = string>(
-    options: KeyOptions<ValueType>,
-  ): AspenKey<ValueType> {
-    return new AspenKey<ValueType>(String, options);
+    options: StateLeafOptions<ValueType>,
+  ): StateLeaf<ValueType> {
+    return new StateLeaf<ValueType>(String, options);
   }
 
   public static number<ValueType extends number = number>(
-    options: KeyOptions<ValueType>,
-  ): AspenKey<ValueType> {
-    return new AspenKey<ValueType>(Number, options);
+    options: StateLeafOptions<ValueType>,
+  ): StateLeaf<ValueType> {
+    return new StateLeaf<ValueType>(Number, options);
   }
 
   public static array<ValueType extends readonly unknown[]>(
     options: readonly unknown[] extends ValueType
-      ? "AspenKey.array requires a declared type: AspenKey.array<YourType>({ ... })"
-      : KeyOptions<ValueType>,
-  ): AspenKey<ValueType> {
-    return new AspenKey<ValueType>(Array, options as KeyOptions<ValueType>);
+      ? "StateLeaf.array requires a declared type: StateLeaf.array<YourType>({ ... })"
+      : StateLeafOptions<ValueType>,
+  ): StateLeaf<ValueType> {
+    return new StateLeaf<ValueType>(
+      Array,
+      options as StateLeafOptions<ValueType>,
+    );
   }
 
   public static object<ValueType extends object>(
     options: object extends ValueType
-      ? "AspenKey.object requires a declared type: AspenKey.object<YourType>({ ... })"
-      : KeyOptions<ValueType>,
-  ): AspenKey<ValueType> {
-    return new AspenKey<ValueType>(Object, options as KeyOptions<ValueType>);
+      ? "StateLeaf.object requires a declared type: StateLeaf.object<YourType>({ ... })"
+      : StateLeafOptions<ValueType>,
+  ): StateLeaf<ValueType> {
+    return new StateLeaf<ValueType>(
+      Object,
+      options as StateLeafOptions<ValueType>,
+    );
   }
 
   // Private methods
 
-  private bound(this: AspenKey<ValueType>): Binding {
+  private bound(this: StateLeaf<ValueType>): Binding {
     if (this.binding === null) {
       throw new Error(
-        "[Aspen] Key is not bound to a tree. Build the tree with create().",
+        "[Aspen] Leaf is not bound to a tree. Build the tree with create().",
       );
     }
     return this.binding;
@@ -418,10 +431,10 @@ class AspenKey<ValueType = unknown> {
     );
   }
 
-  private static requireKey(self: unknown, method: string): void {
-    if (self instanceof AspenKey === false) {
+  private static requireLeaf(self: unknown, method: string): void {
+    if (self instanceof StateLeaf === false) {
       throw new Error(
-        `[Aspen] ${method}() was called without its key as \`this\`. Call it as key.${method}(...) or wrap it in a function.`,
+        `[Aspen] ${method}() was called without its leaf as \`this\`. Call it as leaf.${method}(...) or wrap it in a function.`,
       );
     }
   }
@@ -436,7 +449,8 @@ class AspenKey<ValueType = unknown> {
   private static encodeMirror(value: unknown): string {
     if (typeof value === "string") return value;
     return JSON.stringify(value);
-  }}
+  }
+}
 
-export type { KeyOptions };
-export { AspenKey };
+export type { StateLeafOptions };
+export { StateLeaf };

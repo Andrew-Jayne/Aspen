@@ -42,8 +42,8 @@ export class IndexedDBBackend {
 
   private static readonly OBJECT_STORE_NAME = "aspen-kv";
   private static readonly DATABASE_NAME = "aspen";
-  private static connection: Promise<IndexedDBBackend> | null = null;
-  private static connected: IndexedDBBackend | null = null;
+  private static connection: Promise<void> | null = null;
+  private static instance: IndexedDBBackend | null = null;
 
   private constructor(database: IDBDatabase, cache: Map<string, unknown>) {
     this.database = database;
@@ -56,6 +56,16 @@ export class IndexedDBBackend {
   public get length(): number {
     IndexedDBBackend.requireBackend(this, "length");
     return this.cache.size;
+  }
+
+  /** The one open backend. Every read and write in Aspen goes through it. */
+  public static get gateway(): IndexedDBBackend {
+    if (IndexedDBBackend.instance === null) {
+      throw new Error(
+        "[Aspen] IndexedDB is not connected. Build trees and groves with await create().",
+      );
+    }
+    return IndexedDBBackend.instance;
   }
 
   // Public methods
@@ -103,8 +113,8 @@ export class IndexedDBBackend {
 
   public async close(this: IndexedDBBackend): Promise<void> {
     IndexedDBBackend.requireBackend(this, "close");
-    if (IndexedDBBackend.connected === this) {
-      IndexedDBBackend.connected = null;
+    if (IndexedDBBackend.instance === this) {
+      IndexedDBBackend.instance = null;
       IndexedDBBackend.connection = null;
     }
     await this.tail;
@@ -113,7 +123,7 @@ export class IndexedDBBackend {
 
   // Public static methods
 
-  public static connect(): Promise<IndexedDBBackend> {
+  public static connect(): Promise<void> {
     if (IndexedDBBackend.connection === null) {
       IndexedDBBackend.connection = IndexedDBBackend.open(
         IndexedDBBackend.DATABASE_NAME,
@@ -234,17 +244,16 @@ export class IndexedDBBackend {
     return new Error(`[Aspen] ${message}`, { cause });
   }
 
-  private static createObjectStoreOnUpgrade(event: IDBVersionChangeEvent): void {
+  private static createObjectStoreOnUpgrade(
+    event: IDBVersionChangeEvent,
+  ): void {
     (event.target as IDBOpenDBRequest).result.createObjectStore(
       IndexedDBBackend.OBJECT_STORE_NAME,
     );
   }
 
-  private static rememberConnection(
-    backend: IndexedDBBackend,
-  ): IndexedDBBackend {
-    IndexedDBBackend.connected = backend;
-    return backend;
+  private static rememberConnection(backend: IndexedDBBackend): void {
+    IndexedDBBackend.instance = backend;
   }
 
   private static forgetFailedConnection(error: unknown): never {

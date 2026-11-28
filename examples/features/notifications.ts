@@ -1,4 +1,4 @@
-import { state } from "../tree.ts";
+import { grove } from "../grove.ts";
 import { find } from "../dom.ts";
 import { LEVELS, type Notification } from "../types.ts";
 
@@ -19,7 +19,7 @@ function buildToast(notification: Notification): HTMLDivElement {
 }
 
 function mountToast(): void {
-  const notification = state.notification.value;
+  const notification = grove.activity.notification.value;
   if (notification.id === "") return;
 
   const zone = find("#toast-zone", HTMLDivElement);
@@ -34,7 +34,7 @@ export function initNotifications(): void {
   let sent = 0;
   find("#notify-btn", HTMLButtonElement).addEventListener("click", () => {
     sent += 1;
-    void state.notification.update({
+    void grove.activity.notification.update({
       id: crypto.randomUUID(),
       message: `Demo notification #${sent}`,
       level: LEVELS[sent % LEVELS.length] ?? "info",
@@ -42,5 +42,5 @@ export function initNotifications(): void {
   });
 
   // Registered after tree creation, which is what "dynamic listen" means.
-  state.notification.listen(mountToast);
+  grove.activity.notification.listen(mountToast);
 }

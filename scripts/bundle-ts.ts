@@ -24,9 +24,13 @@ const BUNDLE = `\
 
 ${stripImports(readFileSync("src/storage.ts", "utf8"))}
 
-${stripImports(readFileSync("src/key.ts", "utf8"))}
+${stripImports(readFileSync("src/leaf.ts", "utf8"))}
 
-${stripImports(readFileSync("src/stateTree.ts", "utf8"))}
+${stripImports(readFileSync("src/remote.ts", "utf8"))}
+
+${stripImports(readFileSync("src/tree.ts", "utf8"))}
+
+${stripImports(readFileSync("src/grove.ts", "utf8"))}
 `;
 
 writeFileSync("dist/aspen.ts", BUNDLE);
